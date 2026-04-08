@@ -1,4 +1,13 @@
 function onMapClick(e) {
+    if (typeof isLieuMode !== 'undefined' && isLieuMode) {
+        customLieuPrompt("Nouveau Lieu-dit", "", "📌", "", (title, icon, description) => {
+            if (!title) return;
+            saveLieuDit(title, description, icon, e.latlng.lat, e.latlng.lng);
+            cancelLieuMode();
+        });
+        return;
+    }
+
     if (!isDrawMode) return;
 
     currentLineCoords.push([e.latlng.lat, e.latlng.lng]);
@@ -88,6 +97,28 @@ function cancelDraw() {
     document.getElementById('draw-distance').innerText = '0';
 }
 
+let isLieuMode = false;
+let lieuxDitsLayers = {};
+
+window.toggleLieuMode = function() {
+    isLieuMode = !isLieuMode;
+    const lieuBtn = document.getElementById('lieu-btn');
+
+    if (isLieuMode) {
+        lieuBtn.style.backgroundColor = 'rgba(0, 120, 212, 0.2)';
+        cancelDraw();
+        closePanel();
+    } else {
+        cancelLieuMode();
+    }
+}
+
+window.cancelLieuMode = function() {
+    isLieuMode = false;
+    const lieuBtn = document.getElementById('lieu-btn');
+    if (lieuBtn) lieuBtn.style.backgroundColor = 'transparent';
+}
+
 let isDrawCollapsed = false;
 window.toggleDrawCollapse = function() {
     isDrawCollapsed = !isDrawCollapsed;
@@ -149,27 +180,50 @@ window.toggleCategory = function(type, isVisible) {
 }
 
 window.deleteCategory = function(type) {
-    customConfirm(`Êtes-vous sûr de vouloir supprimer TOUTES les lignes de la catégorie "${type}" ?`, () => {
-        fetch(`/api/lines/category/${encodeURIComponent(type)}`, {
-            method: 'DELETE',
-            headers: { 'Authorization': 'Bearer ' + token }
-        })
-        .then(res => res.json())
-        .then(data => {
-            if (data.success) {
-                let idsToDelete = linesByData.filter(i => i.data.type === type).map(i => i.data.id);
-                idsToDelete.forEach(id => {
-                    if(drawnLayers[id]) {
-                        map.removeLayer(drawnLayers[id]);
-                        delete drawnLayers[id];
-                    }
-                });
-                linesByData = linesByData.filter(i => i.data.type !== type);
-                renderLegend();
-            } else {
-                alert("Erreur: " + data.error);
-            }
-        });
+    customConfirm(`Êtes-vous sûr de vouloir supprimer TOUTES les données de la catégorie "${type}" ?`, () => {
+        if (type === 'Lieux-dits') {
+            fetch(`/api/lieux/category/all`, {
+                method: 'DELETE',
+                headers: { 'Authorization': 'Bearer ' + token }
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    let idsToDelete = linesByData.filter(i => i.data.type === type).map(i => i.data.lieuData.id);
+                    idsToDelete.forEach(id => {
+                        if(lieuxDitsLayers[id]) {
+                            map.removeLayer(lieuxDitsLayers[id]);
+                            delete lieuxDitsLayers[id];
+                        }
+                    });
+                    linesByData = linesByData.filter(i => i.data.type !== type);
+                    renderLegend();
+                } else {
+                    alert("Erreur: " + data.error);
+                }
+            });
+        } else {
+            fetch(`/api/lines/category/${encodeURIComponent(type)}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': 'Bearer ' + token }
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    let idsToDelete = linesByData.filter(i => i.data.type === type).map(i => i.data.id);
+                    idsToDelete.forEach(id => {
+                        if(drawnLayers[id]) {
+                            map.removeLayer(drawnLayers[id]);
+                            delete drawnLayers[id];
+                        }
+                    });
+                    linesByData = linesByData.filter(i => i.data.type !== type);
+                    renderLegend();
+                } else {
+                    alert("Erreur: " + data.error);
+                }
+            });
+        }
     });
 }
 
@@ -196,16 +250,24 @@ window.renderLegend = function() {
     const types = [...new Set(linesByData.map(item => item.data.type))];
     types.forEach(type => {
         let isTypeHidden = hiddenCategories.has(type);
-        let colorExample = linesByData.find(i => i.data.type === type)?.data.color || '#000';
+
+        let prefix = '';
+        if (type === 'Lieux-dits') {
+            prefix = `<span style="display:inline-block; font-size:16px; margin-right:5px;">📌</span>`;
+        } else {
+            let colorExample = linesByData.find(i => i.data.type === type)?.data.color || '#000';
+            prefix = `<span style="display:inline-block; width:12px; height:3px; background-color:${colorExample}; margin-right:5px;"></span>`;
+        }
+
         html += `
             <div class="legend-item">
                 <label style="flex:1;">
                     <input type="checkbox" onchange="toggleCategory('${type}', this.checked)" ${!isTypeHidden ? 'checked' : ''}>
-                    <span style="display:inline-block; width:12px; height:3px; background-color:${colorExample}; margin-right:5px;"></span>${type}
+                    ${prefix}${type}
                 </label>
         `;
         if (token && currentUser) {
-            html += `<button class="btn icon-btn" style="color:red; font-size:12px; padding:2px;" onclick="deleteCategory('${type}')" title="Supprimer toutes les lignes">🗑️</button>`;
+            html += `<button class="btn icon-btn" style="color:red; font-size:12px; padding:2px;" onclick="deleteCategory('${type}')" title="Supprimer tout">🗑️</button>`;
         }
         html += `</div>`;
     });
@@ -387,9 +449,134 @@ function loadSavedLines() {
                 }
             });
 
+            loadSavedLieux();
             renderLegend();
             updateVisibility();
         });
+}
+
+window.loadSavedLieux = function() {
+    fetch('/api/lieux')
+        .then(res => res.json())
+        .then(data => {
+            if (data.error) return;
+            data.forEach(lieu => {
+                if (!lieuxDitsLayers[lieu.id]) {
+                    renderLieuDit(lieu);
+                }
+            });
+        });
+}
+
+function renderLieuDit(lieu) {
+    let iconChar = lieu.icon || '📌';
+    let lieuIcon = L.divIcon({
+        className: 'custom-div-icon',
+        html: `<div style='font-size: 24px; text-shadow: 1px 1px 2px #fff;'>${iconChar}</div>`,
+        iconSize: [30, 42],
+        iconAnchor: [15, 42],
+        popupAnchor: [0, -32]
+    });
+
+    let marker = L.marker([lieu.lat, lieu.lng], { icon: lieuIcon }).addTo(map);
+
+    bindLieuPopup(marker, lieu);
+
+    lieuxDitsLayers[lieu.id] = marker;
+
+    let fakeData = { id: 'lieu_'+lieu.id, type: 'Lieux-dits', color: '#ffb300', isLieu: true, lieuData: lieu };
+    linesByData.push({ layer: marker, data: fakeData });
+    renderLegend();
+    updateVisibility();
+}
+
+function bindLieuPopup(marker, lieu) {
+    let iconChar = lieu.icon || '📌';
+    let popupContent = `<strong>${iconChar} ${lieu.title}</strong><br><em>${lieu.description || ''}</em><br><small>Ajouté par ${lieu.username || 'Inconnu'} le ${formatTime(lieu.created_at)}</small>`;
+
+    if (token && (currentUser === 'admin' || currentUser === lieu.username)) {
+        popupContent += `<br><button class="btn btn-small" style="background:#ccffcc; color:#005500; margin-top:5px; margin-right:5px; text-decoration:none;" onclick="editLieuDit('${lieu.id}')">🖍️ Modifier</button>`;
+        popupContent += `<button class="btn btn-small" style="background:#ffcccc; color:red; margin-top:5px; text-decoration:none;" onclick="deleteLieuDit('${lieu.id}')">🗑️ Supprimer</button>`;
+    }
+
+    marker.bindPopup(popupContent);
+}
+
+function saveLieuDit(title, description, icon, lat, lng) {
+    fetch('/api/lieux', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + token
+        },
+        body: JSON.stringify({ title, description, icon, lat, lng })
+    })
+    .then(res => {
+        if (!res.ok) throw new Error("Erreur de sauvegarde");
+        return res.json();
+    })
+    .then(data => {
+        let newLieu = { id: data.id, title, description, icon, lat, lng, username: currentUser, created_at: new Date() };
+        renderLieuDit(newLieu);
+    })
+    .catch(err => alert("Erreur: " + err.message));
+}
+
+window.editLieuDit = function(lieuId) {
+    let item = linesByData.find(i => i.data.isLieu && String(i.data.lieuData.id) === String(lieuId));
+    if (!item) return;
+
+    let lieu = item.data.lieuData;
+    map.closePopup();
+
+    customLieuPrompt("Modifier Lieu-dit", lieu.title, lieu.icon, lieu.description, (newTitle, newIcon, newDesc) => {
+        if (!newTitle) return;
+        fetch(`/api/lieux/${lieu.id}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer ' + token
+            },
+            body: JSON.stringify({ title: newTitle, description: newDesc, icon: newIcon })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                // Remove old marker
+                if(lieuxDitsLayers[lieu.id]) {
+                    map.removeLayer(lieuxDitsLayers[lieu.id]);
+                }
+                linesByData = linesByData.filter(i => !(i.data.isLieu && String(i.data.lieuData.id) === String(lieu.id)));
+
+                // create updated marker
+                lieu.title = newTitle;
+                lieu.description = newDesc;
+                lieu.icon = newIcon;
+
+                renderLieuDit(lieu);
+                lieuxDitsLayers[lieu.id].openPopup();
+            }
+        });
+    });
+}
+
+window.deleteLieuDit = function(lieuId) {
+    customConfirm("Supprimer ce lieu-dit ?", () => {
+        fetch(`/api/lieux/${lieuId}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': 'Bearer ' + token }
+        })
+        .then(res => {
+            if (res.ok) {
+                if(lieuxDitsLayers[lieuId]) {
+                    map.removeLayer(lieuxDitsLayers[lieuId]);
+                    delete lieuxDitsLayers[lieuId];
+                }
+                linesByData = linesByData.filter(i => !(i.data.isLieu && String(i.data.lieuData.id) === String(lieuId)));
+                renderLegend();
+            }
+        });
+    });
 }
 
 function bindLinePopup(layer, lineData) {
@@ -407,77 +594,3 @@ function bindLinePopup(layer, lineData) {
           .openOn(map);
     });
 }
-
-window.editLine = function(lineId) {
-    let item = linesByData.find(i => String(i.data.id) === String(lineId));
-    if (!item) return;
-
-    let lineData = item.data;
-    let coords = typeof lineData.coordinates === 'string' ? JSON.parse(lineData.coordinates) : (lineData.coordinates || lineData.coords || []);
-
-    currentLineCoords = [...coords];
-    redoStack = [];
-
-    // Copy properties to the drawer
-    let select = document.getElementById('draw-type');
-    let found = false;
-    for (let option of select.options) {
-        try {
-            let optVal = JSON.parse(option.value);
-            if (optVal.type === lineData.type) {
-                select.value = option.value;
-                found = true;
-                break;
-            }
-        } catch(ex) {}
-    }
-    if (!found) {
-        select.value = 'custom';
-        document.getElementById('custom-draw-type').value = lineData.type;
-        document.getElementById('custom-draw-color').value = lineData.color;
-    }
-
-    if (!isDrawMode) toggleDrawMode();
-    updateDrawColor();
-    redrawCurrentLine();
-
-    // Delete old line physically and from DB, waiting to be saved
-    if (String(lineData.id).startsWith('offline_')) {
-        offlineLinesQueue = offlineLinesQueue.filter(i => i.id !== lineData.id);
-        localStorage.setItem('offlineLines', JSON.stringify(offlineLinesQueue));
-    } else {
-        fetch(`/api/lines/${lineData.id}`, {
-            method: 'DELETE',
-            headers: { 'Authorization': 'Bearer ' + token }
-        });
-    }
-
-    if (drawnLayers[lineData.id]) {
-        map.removeLayer(drawnLayers[lineData.id]);
-        delete drawnLayers[lineData.id];
-    }
-    linesByData = linesByData.filter(i => i.data.id !== lineData.id);
-    renderLegend();
-    map.closePopup();
-}
-
-window.deleteLine = function(lineId) {
-    customConfirm("Supprimer ce tracé réseau ?", () => {
-        fetch(`/api/lines/${lineId}`, {
-            method: 'DELETE',
-            headers: { 'Authorization': 'Bearer ' + token }
-        })
-        .then(res => {
-            if (res.ok) {
-                if(drawnLayers[lineId]) {
-                    map.removeLayer(drawnLayers[lineId]);
-                    delete drawnLayers[lineId];
-                }
-                linesByData = linesByData.filter(i => i.data.id !== lineId);
-                renderLegend();
-                map.closePopup();
-            }
-        });
-    });
-}
-

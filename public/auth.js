@@ -10,6 +10,7 @@ function updateAuthUI() {
         info.innerText = currentUser;
 
         document.getElementById('draw-btn').style.display = 'inline-flex';
+        document.getElementById('lieu-btn').style.display = 'inline-flex';
 
         if (currentUser === 'admin') adminBtn.style.display = 'block';
         else adminBtn.style.display = 'none';
@@ -25,7 +26,9 @@ function updateAuthUI() {
         info.innerText = '';
         adminBtn.style.display = 'none';
         document.getElementById('draw-btn').style.display = 'none';
+        document.getElementById('lieu-btn').style.display = 'none';
         cancelDraw();
+        if (typeof cancelLieuMode === 'function') cancelLieuMode();
 
         // Notes UI
         document.getElementById('add-note-section').style.display = 'none';
@@ -115,4 +118,3 @@ document.getElementById('admin-form').addEventListener('submit', function(e) {
         }
     });
 });
-

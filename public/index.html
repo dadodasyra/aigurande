@@ -80,6 +80,7 @@
 
     <!-- UI Overlay for current state -->
     <div id="ui-overlay">
+        <button id="lieu-btn" class="btn icon-btn-auth" onclick="toggleLieuMode()" style="display:none;" title="Ajouter un lieu-dit">📌</button>
         <button id="draw-btn" class="btn icon-btn-auth" onclick="toggleDrawMode()" style="display:none;" title="Mode Tracé (Réseaux)">✏️</button>
         <button id="admin-btn" class="btn icon-btn-auth" onclick="openAdmin()" style="display:none;" title="Ajouter un utilisateur">⚙️</button>
         <span id="user-info"></span>
@@ -210,6 +211,44 @@
             <div style="display:flex; gap:10px; justify-content:center;">
                 <button id="prompt-ok-btn" class="btn primary-btn" style="flex:1;">Valider</button>
                 <button class="btn" onclick="document.getElementById('prompt-modal').style.display='none'" style="flex:1;">Annuler</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Lieu Prompt Modal -->
+    <div id="lieu-prompt-modal" class="modal">
+        <div class="modal-content" style="max-width: 300px;">
+            <h3 id="lieu-prompt-title" style="margin-top: 0;">Lieu-dit</h3>
+            <input type="text" id="lieu-prompt-title-input" placeholder="Titre" class="input-field" style="width: calc(100% - 10px); margin-bottom: 10px; padding: 5px;">
+            <select id="lieu-prompt-icon-input" class="input-field" style="width: 100%; margin-bottom: 10px; padding: 5px;">
+                <option value="📌">📌 Point (Défaut)</option>
+                <option value="⚠️">⚠️ Attention</option>
+                <option value="🚧">🚧 Travaux</option>
+                <option value="🌳">🌳 Végétation</option>
+                <option value="💧">💧 Eau</option>
+                <option value="⚡">⚡ Électricité</option>
+                <option value="🚜">🚜 Agricole</option>
+                <option value="🏠">🏠 Bâtiment</option>
+                <option value="🚩">🚩 Drapeau</option>
+                <option value="❌">❌ Danger</option>
+            </select>
+            <textarea id="lieu-prompt-desc-input" placeholder="Description" style="width: 100%; height: 80px; margin-bottom: 10px;"></textarea>
+            <div style="display:flex; gap:10px; justify-content:center;">
+                <button id="lieu-prompt-ok-btn" class="btn primary-btn" style="flex:1;">Valider</button>
+                <button class="btn" onclick="document.getElementById('lieu-prompt-modal').style.display='none'" style="flex:1;">Annuler</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Dual Prompt Modal -->
+    <div id="dual-prompt-modal" class="modal">
+        <div class="modal-content" style="max-width: 300px;">
+            <h3 id="dual-prompt-title" style="margin-top: 0;">Lieu-dit</h3>
+            <input type="text" id="dual-prompt-input1" placeholder="Titre" class="input-field" style="width: calc(100% - 10px); margin-bottom: 10px; padding: 5px;">
+            <textarea id="dual-prompt-input2" placeholder="Description" style="width: 100%; height: 80px; margin-bottom: 10px;"></textarea>
+            <div style="display:flex; gap:10px; justify-content:center;">
+                <button id="dual-prompt-ok-btn" class="btn primary-btn" style="flex:1;">Valider</button>
+                <button class="btn" onclick="document.getElementById('dual-prompt-modal').style.display='none'" style="flex:1;">Annuler</button>
             </div>
         </div>
     </div>

@@ -108,7 +108,7 @@ function initMap() {
 function onEachFeature(feature, layer) {
     layer.on({
         click: function(e) {
-            if (isDrawMode) return; // Ne pas ouvrir le panel si on trace une ligne
+            if (isDrawMode || isLieuMode) return; // Ne pas ouvrir le panel si on trace une ligne ou un lieu-dit
 
             // Highlight
             if (geojsonLayer) geojsonLayer.resetStyle();
@@ -212,6 +212,46 @@ window.customPrompt = function(message, defaultValue, callback) {
     };
 }
 
+window.customDualPrompt = function(message, defaultVal1, defaultVal2, callback) {
+    document.getElementById('dual-prompt-title').innerText = message;
+    document.getElementById('dual-prompt-input1').value = defaultVal1 || '';
+    document.getElementById('dual-prompt-input2').value = defaultVal2 || '';
+    document.getElementById('dual-prompt-modal').style.display = 'block';
+
+    let oldBtn = document.getElementById('dual-prompt-ok-btn');
+    let newBtn = oldBtn.cloneNode(true);
+    oldBtn.parentNode.replaceChild(newBtn, oldBtn);
+
+    newBtn.onclick = function() {
+        document.getElementById('dual-prompt-modal').style.display = 'none';
+        callback(
+            document.getElementById('dual-prompt-input1').value,
+            document.getElementById('dual-prompt-input2').value
+        );
+    };
+}
+
+window.customLieuPrompt = function(message, defaultTitle, defaultIcon, defaultDesc, callback) {
+    document.getElementById('lieu-prompt-title').innerText = message;
+    document.getElementById('lieu-prompt-title-input').value = defaultTitle || '';
+    document.getElementById('lieu-prompt-icon-input').value = defaultIcon || '📌';
+    document.getElementById('lieu-prompt-desc-input').value = defaultDesc || '';
+    document.getElementById('lieu-prompt-modal').style.display = 'block';
+
+    let oldBtn = document.getElementById('lieu-prompt-ok-btn');
+    let newBtn = oldBtn.cloneNode(true);
+    oldBtn.parentNode.replaceChild(newBtn, oldBtn);
+
+    newBtn.onclick = function() {
+        document.getElementById('lieu-prompt-modal').style.display = 'none';
+        callback(
+            document.getElementById('lieu-prompt-title-input').value,
+            document.getElementById('lieu-prompt-icon-input').value,
+            document.getElementById('lieu-prompt-desc-input').value
+        );
+    };
+}
+
 window.customConfirm = function(message, callback) {
     document.getElementById('confirm-title').innerText = "Confirmation";
     document.getElementById('confirm-message').innerText = message;
@@ -295,7 +335,7 @@ window.locateUser = function(e) {
     if (e) e.preventDefault();
     if (userMarker) {
         // Si on a déjà la position, on se centre dessus en douceur
-        map.flyTo(userMarker.getLatLng(), 18);
+        map.flyTo(userMarker.getLatLng(), 18, {duration: 0.5});
     } else {
         // Sinon on force la localisation
         map.locate({setView: true, maxZoom: 18});
