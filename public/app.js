@@ -281,12 +281,16 @@ function editIndividualNote(noteId, oldContent) {
 function updateAuthUI() {
     const btn = document.getElementById('auth-btn');
     const info = document.getElementById('user-info');
+    const adminBtn = document.getElementById('admin-btn');
     
     if (token && currentUser) {
         btn.innerText = '🚪';
         btn.title = 'Se déconnecter';
         btn.onclick = logout;
         info.innerText = currentUser;
+        
+        if (currentUser === 'admin') adminBtn.style.display = 'block';
+        else adminBtn.style.display = 'none';
         
         // Notes UI
         document.getElementById('add-note-section').style.display = 'block';
@@ -297,6 +301,7 @@ function updateAuthUI() {
         btn.title = 'Se connecter';
         btn.onclick = openLogin;
         info.innerText = '';
+        adminBtn.style.display = 'none';
         
         // Notes UI
         document.getElementById('add-note-section').style.display = 'none';
@@ -312,6 +317,16 @@ function openLogin() {
 
 function closeLogin() {
     document.getElementById('login-modal').style.display = 'none';
+}
+
+function openAdmin() {
+    document.getElementById('admin-modal').style.display = 'block';
+    document.getElementById('admin-error').innerText = '';
+    document.getElementById('admin-success').innerText = '';
+}
+
+function closeAdmin() {
+    document.getElementById('admin-modal').style.display = 'none';
 }
 
 function logout() {
@@ -346,6 +361,33 @@ document.getElementById('login-form').addEventListener('submit', function(e) {
             if (currentParcelId) loadNotes(currentParcelId);
         } else {
             document.getElementById('login-error').innerText = res.body.error || 'Erreur inconnue';
+        }
+    });
+});
+
+document.getElementById('admin-form').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const u = document.getElementById('new-username').value;
+    const p = document.getElementById('new-password').value;
+    
+    fetch('/api/users', {
+        method: 'POST',
+        headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + token
+        },
+        body: JSON.stringify({ username: u, password: p })
+    })
+    .then(res => res.json().then(data => ({ status: res.status, body: data })))
+    .then(res => {
+        if (res.status === 201) {
+            document.getElementById('admin-success').innerText = `Utilisateur ${u} créé !`;
+            document.getElementById('admin-error').innerText = '';
+            document.getElementById('new-username').value = '';
+            document.getElementById('new-password').value = '';
+        } else {
+            document.getElementById('admin-error').innerText = res.body.error || 'Erreur inconnue';
+            document.getElementById('admin-success').innerText = '';
         }
     });
 });
@@ -448,7 +490,7 @@ function onLocationFound(e) {
     userCircle = L.circle(e.latlng, radius).addTo(map);
 
     const geoInfo = document.getElementById('geo-info');
-    geoInfo.innerText = `Précision GPS : ${radius} m`;
+    geoInfo.innerText = `~ ${radius} m`;
     geoInfo.style.display = 'block';
     setTimeout(() => { geoInfo.style.display = 'none'; }, 5000);
 }
