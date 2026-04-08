@@ -32,15 +32,30 @@ body, html {
     color: #333;
 }
 
+#user-info:empty {
+    display: none;
+}
+
 .icon-btn-auth {
     padding: 5px !important;
     font-size: 18px !important;
     line-height: 1;
-    min-width: unset;
+    min-width: 32px;
+    height: 32px;
     background: transparent !important;
     border: none !important;
+    border-radius: 50% !important;
     box-shadow: none !important;
     cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.2s, transform 0.1s;
+}
+
+.icon-btn-auth:hover {
+    background-color: rgba(0, 0, 0, 0.08) !important;
+    transform: scale(1.1);
 }
 
 .panel {
@@ -86,6 +101,8 @@ body, html {
     background: #e0e0e0;
     border-top-left-radius: 12px;
     border-top-right-radius: 12px;
+    user-select: none;
+    -webkit-user-select: none;
 }
 
 .handle-bar {
@@ -314,4 +331,10 @@ textarea {
     font-size: 10px;
     margin-right: 5px;
     vertical-align: middle;
+}
+
+/* Empêche la sélection de texte pendant le drag */
+.no-select, .no-select * {
+    user-select: none !important;
+    -webkit-user-select: none !important;
 }

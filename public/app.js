@@ -185,7 +185,7 @@ function loadNotes(parcelId) {
                     actionHTML = ` <button class="icon-btn" onclick="editIndividualNote(${note.id}, '${note.content.replace(/'/g, "\\'")}')">✏️ Edit</button>`;
                 }
 
-                el.innerHTML = `<strong>${note.username}</strong> (${formatTime(note.created_at)})${actionHTML}: <br><br> <span id="note-text-${note.id}">${note.content}</span>`;
+                el.innerHTML = `<strong>${note.username}</strong> (${formatTime(note.created_at)})${actionHTML}: <br> <span id="note-text-${note.id}">${note.content}</span>`;
                 individualContainer.appendChild(el);
             });
             
@@ -194,7 +194,7 @@ function loadNotes(parcelId) {
             offlineForThis.forEach(note => {
                 const el = document.createElement('div');
                 el.className = 'note';
-                el.innerHTML = `<strong>${note.username}</strong> <span class="offline-badge">Attente Synchronisation (Hors ligne)</span>: <br><br> <span>${note.content}</span>`;
+                el.innerHTML = `<strong>${note.username}</strong> <span class="offline-badge">Attente Synchronisation (Hors ligne)</span>: <br> <span>${note.content}</span>`;
                 individualContainer.appendChild(el);
             });
         })
@@ -208,7 +208,7 @@ function loadNotes(parcelId) {
             offlineForThis.forEach(note => {
                 const el = document.createElement('div');
                 el.className = 'note';
-                el.innerHTML = `<strong>${note.username}</strong> <span class="offline-badge">Attente Synchronisation (Hors ligne)</span>: <br><br> <span>${note.content}</span>`;
+                el.innerHTML = `<strong>${note.username}</strong> <span class="offline-badge">Attente Synchronisation (Hors ligne)</span>: <br> <span>${note.content}</span>`;
                 individualContainer.appendChild(el);
             });
         });
@@ -282,16 +282,16 @@ function updateAuthUI() {
     const btn = document.getElementById('auth-btn');
     const info = document.getElementById('user-info');
     const adminBtn = document.getElementById('admin-btn');
-    
+
     if (token && currentUser) {
         btn.innerText = '🚪';
         btn.title = 'Se déconnecter';
         btn.onclick = logout;
         info.innerText = currentUser;
-        
+
         if (currentUser === 'admin') adminBtn.style.display = 'block';
         else adminBtn.style.display = 'none';
-        
+
         // Notes UI
         document.getElementById('add-note-section').style.display = 'block';
         document.getElementById('edit-public-btn').style.display = 'inline-block';
@@ -302,7 +302,7 @@ function updateAuthUI() {
         btn.onclick = openLogin;
         info.innerText = '';
         adminBtn.style.display = 'none';
-        
+
         // Notes UI
         document.getElementById('add-note-section').style.display = 'none';
         document.getElementById('edit-public-btn').style.display = 'none';
@@ -369,10 +369,10 @@ document.getElementById('admin-form').addEventListener('submit', function(e) {
     e.preventDefault();
     const u = document.getElementById('new-username').value;
     const p = document.getElementById('new-password').value;
-    
+
     fetch('/api/users', {
         method: 'POST',
-        headers: { 
+        headers: {
             'Content-Type': 'application/json',
             'Authorization': 'Bearer ' + token
         },
@@ -506,10 +506,12 @@ function startResize(e) {
     isResizing = true; 
     startY = e.touches ? e.touches[0].clientY : e.clientY;
     startTime = Date.now();
+    document.body.classList.add('no-select'); // Empêche la sélection de texte
     clientLog('Started resizing panel');
 }
 function stopResize() { 
     isResizing = false; 
+    document.body.classList.remove('no-select'); // Restaure la sélection de texte
 }
 
 function resizePanel(clientY) {
