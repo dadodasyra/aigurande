@@ -80,6 +80,7 @@
 
     <!-- UI Overlay for current state -->
     <div id="ui-overlay">
+        <button id="catalog-btn" class="btn icon-btn-auth" onclick="toggleCatalog(event)" title="Catalogue">🗂️</button>
         <button id="lieu-btn" class="btn icon-btn-auth" onclick="toggleLieuMode()" style="display:none;" title="Ajouter un lieu-dit">📌</button>
         <button id="draw-btn" class="btn icon-btn-auth" onclick="toggleDrawMode()" style="display:none;" title="Mode Tracé (Réseaux)">✏️</button>
         <button id="admin-btn" class="btn icon-btn-auth" onclick="openAdmin()" style="display:none;" title="Ajouter un utilisateur">⚙️</button>
@@ -133,6 +134,20 @@
         <div id="legend-content">
             <!-- Dynamically populated -->
         </div>
+    </div>
+
+    <!-- Catalog UI Overlay -->
+    <div id="catalog-overlay" class="hidden">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+            <h4 style="margin:0;">Catalogue</h4>
+            <button class="btn icon-btn" style="text-decoration:none;" onclick="toggleCatalog()">X</button>
+        </div>
+        <hr style="margin:8px 0;">
+        <div id="catalog-switch" style="display:flex; gap:6px; margin-bottom:10px;">
+            <button id="catalog-lines-btn" class="btn btn-small" onclick="setCatalogMode('lines')">Lignes</button>
+            <button id="catalog-lieux-btn" class="btn btn-small" onclick="setCatalogMode('lieux')">Lieux-dits</button>
+        </div>
+        <div id="catalog-content"></div>
     </div>
 
     <!-- Confirm Modal -->
@@ -228,7 +243,7 @@
                 <option value="💧">💧 Eau</option>
                 <option value="⚡">⚡ Électricité</option>
                 <option value="🚜">🚜 Agricole</option>
-                <option value="🏠">🏠 Bâtiment</option>
+                <option value="??">?? Bâtiment</option>
                 <option value="🚩">🚩 Drapeau</option>
                 <option value="❌">❌ Danger</option>
             </select>

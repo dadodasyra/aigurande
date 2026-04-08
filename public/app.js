@@ -139,18 +139,27 @@ function openPanel(feature) {
     document.getElementById('panel-title').innerText = `Parcelle ${shortId}`;
 
     // Display properties
-    let created = feature.properties.created || 'N/A';
-    let updated = feature.properties.updated || 'N/A';
+    const created = feature.properties.created || 'N/A';
+    const updated = feature.properties.updated || 'N/A';
+    const contenance = Number(feature.properties.contenance);
+    const hasSurface = Number.isFinite(contenance);
+    const surfaceM2 = hasSurface ? `${contenance.toLocaleString('fr-FR')} m²` : 'N/A';
+    const surfaceHa = hasSurface ? `${(contenance / 10000).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ha` : 'N/A';
 
-    let otherPropsHTML = Object.keys(feature.properties)
-        .filter(k => k !== 'created' && k !== 'updated')
+    const extraPropsHTML = Object.keys(feature.properties)
+        .filter(k => k !== 'created' && k !== 'updated' && k !== 'contenance')
         .map(key => `<li><strong>${key}:</strong> ${feature.properties[key]}</li>`)
         .join('');
 
+    const otherPropsHTML = `
+        <li><strong>Créé :</strong> ${created}</li>
+        <li><strong>MàJ :</strong> ${updated}</li>
+        ${extraPropsHTML}
+    `;
+
     document.getElementById('parcel-data').innerHTML = `
         <div class="parcel-main-info">
-            <span><strong>Créé :</strong> ${created}</span>
-            <span><strong>MàJ :</strong> ${updated}</span>
+            <span><strong>Surface :</strong> ${surfaceM2} (${surfaceHa})</span>
             <button class="btn btn-small" onclick="toggleMoreInfo()" id="toggle-info-btn">Voir plus ↓</button>
         </div>
         <ul id="parcel-more-info" style="display:none; margin-top:10px; padding-left: 20px; font-size:14px;">${otherPropsHTML}</ul>
