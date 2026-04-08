@@ -94,7 +94,7 @@
             <h4 style="margin:0;">Tracé de réseaux</h4>
             <div>
                 <button id="collapse-draw-btn" class="btn icon-btn" style="text-decoration:none; margin-right:5px;" onclick="toggleDrawCollapse()">—</button>
-                <button class="btn icon-btn" style="color:red; text-decoration:none;" onclick="cancelDraw()">X</button>
+                <button class="btn icon-btn" style="color:red; text-decoration:none;" onclick="cancelDraw()">❌</button>
             </div>
         </div>
         <div id="draw-content">
@@ -128,7 +128,7 @@
     <div id="legend-overlay" class="hidden">
         <div style="display:flex; justify-content:space-between; align-items:center;">
             <h4 style="margin:0;">Légende</h4>
-            <button class="btn icon-btn" style="text-decoration:none;" onclick="toggleLegend()">X</button>
+            <button class="btn icon-btn" style="text-decoration:none;" onclick="toggleLegend()">❌</button>
         </div>
         <hr style="margin:8px 0;">
         <div id="legend-content">
@@ -140,7 +140,7 @@
     <div id="catalog-overlay" class="hidden">
         <div style="display:flex; justify-content:space-between; align-items:center;">
             <h4 style="margin:0;">Catalogue</h4>
-            <button class="btn icon-btn" style="text-decoration:none;" onclick="toggleCatalog()">X</button>
+            <button class="btn icon-btn" style="text-decoration:none;" onclick="toggleCatalog()">❌</button>
         </div>
         <hr style="margin:8px 0;">
         <div id="catalog-switch" style="display:flex; gap:6px; margin-bottom:10px;">
@@ -169,7 +169,7 @@
         </div>
         <div class="panel-header">
             <h3 id="panel-title">Parcelle Info</h3>
-            <button class="btn close-panel-btn" onclick="closePanel()">X</button>
+            <button class="btn close-panel-btn" onclick="closePanel()">❌</button>
         </div>
         <div class="panel-content">
             <div id="parcel-data"></div>
@@ -243,7 +243,7 @@
                 <option value="💧">💧 Eau</option>
                 <option value="⚡">⚡ Électricité</option>
                 <option value="🚜">🚜 Agricole</option>
-                <option value="??">?? Bâtiment</option>
+                <option value="🏢">🏢 Bâtiment</option>
                 <option value="🚩">🚩 Drapeau</option>
                 <option value="❌">❌ Danger</option>
             </select>

@@ -127,6 +127,8 @@ window.toggleDrawCollapse = function() {
 }
 
 let isLegendOpen = false;
+let isCatalogOpen = false;
+let catalogMode = 'lines';
 window.toggleLegend = function(e) {
     if (e) {
         e.preventDefault();
@@ -140,6 +142,26 @@ window.toggleLegend = function(e) {
     } else {
         overlay.classList.add('hidden');
     }
+}
+
+window.toggleCatalog = function(e) {
+    if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+    }
+    isCatalogOpen = !isCatalogOpen;
+    const overlay = document.getElementById('catalog-overlay');
+    if (isCatalogOpen) {
+        overlay.classList.remove('hidden');
+        renderCatalog();
+    } else {
+        overlay.classList.add('hidden');
+    }
+}
+
+window.setCatalogMode = function(mode) {
+    catalogMode = mode === 'lieux' ? 'lieux' : 'lines';
+    renderCatalog();
 }
 
 function updateVisibility() {
@@ -273,6 +295,171 @@ window.renderLegend = function() {
     });
 
     legendContent.innerHTML = html;
+
+    if (isCatalogOpen) {
+        renderCatalog();
+    }
+}
+
+function renderCatalog() {
+    if (!isCatalogOpen) return;
+
+    const content = document.getElementById('catalog-content');
+    const linesBtn = document.getElementById('catalog-lines-btn');
+    const lieuxBtn = document.getElementById('catalog-lieux-btn');
+    if (!content || !linesBtn || !lieuxBtn) return;
+
+    linesBtn.style.background = catalogMode === 'lines' ? '#0078d4' : '#e0e0e0';
+    linesBtn.style.color = catalogMode === 'lines' ? '#fff' : '#333';
+    lieuxBtn.style.background = catalogMode === 'lieux' ? '#0078d4' : '#e0e0e0';
+    lieuxBtn.style.color = catalogMode === 'lieux' ? '#fff' : '#333';
+
+    if (catalogMode === 'lines') {
+        const lines = linesByData
+            .map(item => item.data)
+            .filter(data => data && !data.isLieu);
+        if (lines.length === 0) {
+            content.innerHTML = '<p style="margin:0; color:#666; font-size:13px;">Aucune ligne disponible.</p>';
+            return;
+        }
+
+        const byType = {};
+        lines.forEach(line => {
+            const key = line.type || 'Autre';
+            if (!byType[key]) byType[key] = [];
+            byType[key].push(line);
+        });
+
+        const categories = Object.keys(byType).sort((a, b) => a.localeCompare(b, 'fr'));
+        let html = '';
+        categories.forEach(type => {
+            const items = byType[type]
+                .slice()
+                .sort((a, b) => Number(a.id) - Number(b.id));
+
+            const colorExample = items[0]?.color || '#000';
+            html += `<div class="catalog-group"><div class="catalog-group-title"><span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:${colorExample}; margin-right:6px;"></span>${type}</div>`;
+            items.forEach(line => {
+                html += `
+                    <div class="catalog-item">
+                        <button class="catalog-main-btn" onclick="focusCatalogLine('${line.id}')">#${line.id} - ${line.distance || 0} m</button>
+                        <div class="catalog-actions">
+                            <button class="btn btn-small" title="Modifier" onclick="editLine('${line.id}')">✏️</button>
+                            <button class="btn btn-small" title="Supprimer" style="color:#b40000;" onclick="deleteLine('${line.id}')">🗑️</button>
+                        </div>
+                    </div>
+                `;
+            });
+            html += '</div>';
+        });
+        html += `<button class="btn btn-small" style="width:100%; margin-top:8px;" onclick="exportCatalogMode('lines')">Exporter JSON</button>`;
+        content.innerHTML = html;
+        return;
+    }
+
+    const lieux = linesByData
+        .map(item => item.data)
+        .filter(data => data && data.isLieu && data.lieuData)
+        .map(data => data.lieuData);
+
+    if (lieux.length === 0) {
+        content.innerHTML = '<p style="margin:0; color:#666; font-size:13px;">Aucun lieu-dit disponible.</p>';
+        return;
+    }
+
+    const byIcon = {};
+    lieux.forEach(lieu => {
+        const key = lieu.icon || '📌';
+        if (!byIcon[key]) byIcon[key] = [];
+        byIcon[key].push(lieu);
+    });
+
+    const categories = Object.keys(byIcon).sort((a, b) => a.localeCompare(b, 'fr'));
+    let html = '';
+    categories.forEach(icon => {
+        const items = byIcon[icon]
+            .slice()
+            .sort((a, b) => String(a.title || '').localeCompare(String(b.title || ''), 'fr'));
+
+        html += `<div class="catalog-group"><div class="catalog-group-title">${icon}</div>`;
+        items.forEach(lieu => {
+            html += `
+                <div class="catalog-item">
+                    <button class="catalog-main-btn" onclick="focusCatalogLieu('${lieu.id}')">${icon} ${lieu.title || 'Sans titre'}</button>
+                    <div class="catalog-actions">
+                        <button class="btn btn-small" title="Modifier" onclick="editLieuDit('${lieu.id}')">✏️</button>
+                        <button class="btn btn-small" title="Supprimer" style="color:#b40000;" onclick="deleteLieuDit('${lieu.id}')">🗑️</button>
+                    </div>
+                </div>
+            `;
+        });
+        html += '</div>';
+    });
+    html += `<button class="btn btn-small" style="width:100%; margin-top:8px;" onclick="exportCatalogMode('lieux')">Exporter JSON (tous les lieux-dits)</button>`;
+    content.innerHTML = html;
+}
+
+window.exportCatalogMode = function(mode) {
+    let payload = [];
+
+    if (mode === 'lines') {
+        payload = linesByData
+            .map(item => item.data)
+            .filter(data => data && !data.isLieu)
+            .map(data => ({
+                id: data.id,
+                type: data.type,
+                color: data.color,
+                distance: data.distance,
+                coordinates: data.coordinates || data.coords || [],
+                created_at: data.created_at,
+                username: data.username
+            }));
+    } else {
+        payload = linesByData
+            .map(item => item.data)
+            .filter(data => data && data.isLieu && data.lieuData)
+            .map(data => ({
+                id: data.lieuData.id,
+                title: data.lieuData.title,
+                description: data.lieuData.description,
+                icon: data.lieuData.icon,
+                lat: data.lieuData.lat,
+                lng: data.lieuData.lng,
+                created_at: data.lieuData.created_at,
+                username: data.lieuData.username
+            }));
+    }
+
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = mode === 'lines' ? 'lignes.json' : 'lieux-dits.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+window.focusCatalogLine = function(lineId) {
+    const layer = drawnLayers[lineId];
+    if (!layer) return;
+
+    const bounds = layer.getBounds ? layer.getBounds() : null;
+    if (bounds && bounds.isValid()) {
+        map.flyTo(bounds.getCenter(), Math.max(map.getZoom(), 17), { duration: 0.5 });
+        layer.fire('click', { latlng: bounds.getCenter() });
+    }
+}
+
+window.focusCatalogLieu = function(lieuId) {
+    const marker = lieuxDitsLayers[lieuId];
+    if (!marker) return;
+
+    const latlng = marker.getLatLng();
+    map.flyTo(latlng, Math.max(map.getZoom(), 17), { duration: 0.5 });
+    marker.openPopup();
 }
 
 function saveLine() {
@@ -364,7 +551,7 @@ window.renderLineLocally = function(lineData, options = {}) {
     }
 
     if (token && (currentUser === 'admin' || currentUser === lineData.username)) {
-        popupContent += `<br><button class="btn btn-small" style="background:#ccffcc; color:#005500; margin-top:5px; margin-right:5px; text-decoration:none;" onclick="editLine('${lineData.id}')">🖍️ Modifier</button>`;
+        popupContent += `<br><button class="btn btn-small" style="background:#ccffcc; color:#005500; margin-top:5px; margin-right:5px; text-decoration:none;" onclick="editLine('${lineData.id}')">✏️ Modifier</button>`;
         popupContent += `<button class="btn btn-small" style="background:#ffcccc; color:red; margin-top:5px; text-decoration:none;" onclick="deleteLine('${lineData.id}')">🗑️ Supprimer</button>`;
     }
 
@@ -546,7 +733,7 @@ function bindLieuPopup(marker, lieu) {
     let popupContent = `<strong>${iconChar} ${lieu.title}</strong><br><em>${lieu.description || ''}</em><br><small>Ajouté par ${lieu.username || 'Inconnu'} le ${formatTime(lieu.created_at)}</small>`;
 
     if (token && (currentUser === 'admin' || currentUser === lieu.username)) {
-        popupContent += `<br><button class="btn btn-small" style="background:#ccffcc; color:#005500; margin-top:5px; margin-right:5px; text-decoration:none;" onclick="editLieuDit('${lieu.id}')">🖍️ Modifier</button>`;
+        popupContent += `<br><button class="btn btn-small" style="background:#ccffcc; color:#005500; margin-top:5px; margin-right:5px; text-decoration:none;" onclick="editLieuDit('${lieu.id}')">✏️ Modifier</button>`;
         popupContent += `<button class="btn btn-small" style="background:#ffcccc; color:red; margin-top:5px; text-decoration:none;" onclick="deleteLieuDit('${lieu.id}')">🗑️ Supprimer</button>`;
     }
 
@@ -710,7 +897,7 @@ function bindLinePopup(layer, lineData) {
     let popupContent = `<strong>Réseau : ${lineData.type}</strong><br>Distance : ${lineData.distance} m<br><small>Tracé par ${lineData.username || 'Inconnu'} le ${formatTime(lineData.created_at)}</small>`;
 
     if (token && (currentUser === 'admin' || currentUser === lineData.username)) {
-        popupContent += `<br><button class="btn btn-small" style="background:#ccffcc; color:#005500; margin-top:5px; margin-right:5px; text-decoration:none;" onclick="editLine('${lineData.id}')">🖍️ Modifier</button>`;
+        popupContent += `<br><button class="btn btn-small" style="background:#ccffcc; color:#005500; margin-top:5px; margin-right:5px; text-decoration:none;" onclick="editLine('${lineData.id}')">✏️ Modifier</button>`;
         popupContent += `<button class="btn btn-small" style="background:#ffcccc; color:red; margin-top:5px;" onclick="deleteLine('${lineData.id}')">🗑️ Supprimer</button>`;
     }
 

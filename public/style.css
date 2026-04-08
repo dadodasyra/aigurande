@@ -387,6 +387,71 @@ textarea {
     display: none;
 }
 
+#catalog-overlay {
+    position: absolute;
+    top: 50px;
+    right: 10px;
+    background: rgba(255, 255, 255, 0.92);
+    backdrop-filter: blur(10px);
+    padding: 15px;
+    border-radius: 12px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+    z-index: 1000;
+    width: 280px;
+    max-height: 60vh;
+    overflow-y: auto;
+}
+
+#catalog-overlay.hidden {
+    display: none;
+}
+
+.catalog-group {
+    margin-bottom: 10px;
+}
+
+.catalog-group-title {
+    font-size: 13px;
+    font-weight: bold;
+    color: #444;
+    margin-bottom: 5px;
+}
+
+.catalog-item {
+    margin-bottom: 4px;
+    background: #f7f7f7;
+    border: 1px solid #e2e2e2;
+    border-radius: 6px;
+    padding: 6px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.catalog-main-btn {
+    flex: 1;
+    text-align: left;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    padding: 2px 0;
+    font-size: 13px;
+}
+
+.catalog-main-btn:hover {
+    color: #005bb5;
+}
+
+.catalog-actions {
+    display: flex;
+    gap: 6px;
+    margin-left: auto;
+}
+
+.catalog-item:hover {
+    background: #eaf2ff;
+}
+
 .legend-item {
     display: flex;
     justify-content: space-between;
