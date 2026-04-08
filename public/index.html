@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Aigurande Cadastre</title>
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+    <div id="map"></div>
+
+    <!-- Login Modal -->
+    <div id="login-modal" class="modal">
+        <div class="modal-content">
+            <span class="close-btn" onclick="closeLogin()">&times;</span>
+            <h2>Connexion</h2>
+            <form id="login-form">
+                <input type="text" id="username" placeholder="Nom d'utilisateur" required>
+                <input type="password" id="password" placeholder="Mot de passe" required>
+                <button type="submit" class="btn primary-btn">Se connecter</button>
+            </form>
+            <p id="login-error" style="color:red;"></p>
+        </div>
+    </div>
+
+    <!-- Admin Modal -->
+    <div id="admin-modal" class="modal">
+        <div class="modal-content">
+            <span class="close-btn" onclick="closeAdmin()">&times;</span>
+            <h2>Nouvel Utilisateur</h2>
+            <form id="admin-form">
+                <input type="text" id="new-username" placeholder="Nom d'utilisateur" required>
+                <input type="password" id="new-password" placeholder="Mot de passe" required>
+                <button type="submit" class="btn primary-btn">Ajouter</button>
+            </form>
+            <p id="admin-error" style="color:red;"></p>
+            <p id="admin-success" style="color:green;"></p>
+        </div>
+    </div>
+
+    <!-- UI Overlay for current state -->
+    <div id="ui-overlay">
+        <button id="admin-btn" class="btn icon-btn-auth" onclick="openAdmin()" style="display:none;" title="Ajouter un utilisateur">⚙️</button>
+        <span id="user-info"></span>
+        <button id="auth-btn" class="btn icon-btn-auth" onclick="openLogin()">👤</button>
+    </div>
+
+    <!-- Parcels Info Panel -->
+    <div id="panel" class="panel hidden">
+        <div id="panel-handle">
+            <div class="handle-bar"></div>
+        </div>
+        <div class="panel-header">
+            <h3 id="panel-title">Parcelle Info</h3>
+            <button class="btn close-panel-btn" onclick="closePanel()">X</button>
+        </div>
+        <div class="panel-content">
+            <div id="parcel-data"></div>
+
+            <hr>
+            <h4>Note Publique (Commune)</h4>
+            <div id="public-note-section" class="notes-container">
+                <div id="public-note-display">Aucune note publique.</div>
+                <button id="edit-public-btn" class="icon-btn" style="display:none;" onclick="startEditPublicNote()">✏️ Modifier</button>
+                <div id="public-note-editor" style="display:none;">
+                    <textarea id="public-note-input" placeholder="Note commune..."></textarea>
+                    <div class="note-actions">
+                        <button id="save-public-btn" class="btn primary-btn" onclick="savePublicNote()">Enregistrer</button>
+                        <button id="cancel-public-btn" class="btn" onclick="cancelEditPublicNote()">Annuler</button>
+                    </div>
+                </div>
+            </div>
+
+            <hr>
+            <h4>Notes Individuelles</h4>
+            <div id="individual-notes" class="notes-container"></div>
+
+            <hr>
+            <div id="add-note-section">
+                <textarea id="note-input" placeholder="Ajouter un message personnel..."></textarea>
+                <button id="add-note-btn" class="btn primary-btn">Envoyer</button>
+            </div>
+            <p id="login-prompt">Connectez-vous pour ajouter ou modifier des notes.</p>
+        </div>
+    </div>
+
+    <!-- Custom Control for Geolocation -->
+    <div class="leaflet-control-container">
+        <div class="leaflet-bottom leaflet-right gps-container">
+            <div id="geo-info" class="geo-info"></div>
+            <div class="leaflet-control leaflet-bar control-btns">
+                <a id="center-btn" href="#" title="Recentrer" onclick="recenterMap(event)">🏠</a>
+                <a id="locate-btn" href="#" title="Ma position" onclick="locateUser(event)">📍</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
+
