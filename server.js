@@ -51,10 +51,7 @@ const db = new sqlite3.Database('./database.sqlite', (err) => {
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 user_id INTEGER,
                 FOREIGN KEY (user_id) REFERENCES users(id)
-            )`, () => {
-                // Try to add column if it was created in a previous version
-                db.run(`ALTER TABLE public_notes ADD COLUMN user_id INTEGER`, () => {});
-            });
+            )`);
 
             db.run(`CREATE TABLE IF NOT EXISTS lines (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -63,6 +60,7 @@ const db = new sqlite3.Database('./database.sqlite', (err) => {
                 coordinates TEXT,
                 distance REAL,
                 user_id INTEGER,
+                is_hidden INTEGER DEFAULT 0,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (user_id) REFERENCES users(id)
             )`);
@@ -103,11 +101,10 @@ const db = new sqlite3.Database('./database.sqlite', (err) => {
                 lat REAL,
                 lng REAL,
                 user_id INTEGER,
+                is_hidden INTEGER DEFAULT 0,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (user_id) REFERENCES users(id)
-            )`, () => {
-                db.run(`ALTER TABLE lieux_dits ADD COLUMN icon TEXT DEFAULT '📌'`, () => {});
-            });
+            )`);
 
             // Seed an admin user
             db.get("SELECT id FROM users WHERE username='admin'", (err, row) => {
@@ -242,7 +239,7 @@ app.delete('/api/notes/:id', authenticateToken, (req, res) => {
 
 // Lines routes
 app.get('/api/lines', (req, res) => {
-    db.all(`SELECT lines.*, users.username FROM lines LEFT JOIN users ON lines.user_id = users.id`, [], (err, rows) => {
+    db.all(`SELECT lines.*, users.username FROM lines LEFT JOIN users ON lines.user_id = users.id WHERE lines.is_hidden = 0`, [], (err, rows) => {
         if (err) return res.status(500).json({ error: err.message });
         res.json(rows);
     });
@@ -263,6 +260,7 @@ app.get('/api/lines/changes', (req, res) => {
             lines.coordinates,
             lines.distance,
             lines.user_id,
+            lines.is_hidden,
             lines.created_at,
             users.username
          FROM line_events
@@ -277,6 +275,14 @@ app.get('/api/lines/changes', (req, res) => {
 
             const changes = rows.map((row) => {
                 if (row.event_type === 'delete') {
+                    return {
+                        eventId: row.event_id,
+                        type: 'delete',
+                        lineId: row.line_id
+                    };
+                }
+
+                if (!row.id || Number(row.is_hidden) === 1) {
                     return {
                         eventId: row.event_id,
                         type: 'delete',
@@ -321,12 +327,12 @@ app.post('/api/lines', authenticateToken, (req, res) => {
 app.delete('/api/lines/:id', authenticateToken, (req, res) => {
     if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
     if (req.user.username === 'admin') {
-        db.run(`DELETE FROM lines WHERE id = ?`, [req.params.id], function(err) {
+        db.run(`UPDATE lines SET is_hidden = 1 WHERE id = ?`, [req.params.id], function(err) {
             if (err) return res.status(500).json({ error: err.message });
             res.json({ success: this.changes > 0 });
         });
     } else {
-        db.run(`DELETE FROM lines WHERE id = ? AND user_id = ?`, [req.params.id, req.user.id], function(err) {
+        db.run(`UPDATE lines SET is_hidden = 1 WHERE id = ? AND user_id = ?`, [req.params.id, req.user.id], function(err) {
             if (err) return res.status(500).json({ error: err.message });
             res.json({ success: this.changes > 0 });
         });
@@ -335,7 +341,7 @@ app.delete('/api/lines/:id', authenticateToken, (req, res) => {
 
 app.delete('/api/lines/category/:type', authenticateToken, (req, res) => {
     if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
-    db.run(`DELETE FROM lines WHERE type = ? AND user_id = ?`, [req.params.type, req.user.id], function(err) {
+    db.run(`UPDATE lines SET is_hidden = 1 WHERE type = ? AND user_id = ?`, [req.params.type, req.user.id], function(err) {
         if (err) return res.status(500).json({ error: err.message });
         res.json({ success: true, deleted: this.changes });
     });
@@ -343,7 +349,7 @@ app.delete('/api/lines/category/:type', authenticateToken, (req, res) => {
 
 // Lieux-dits routes
 app.get('/api/lieux', (req, res) => {
-    db.all(`SELECT lieux_dits.*, users.username FROM lieux_dits LEFT JOIN users ON lieux_dits.user_id = users.id`, [], (err, rows) => {
+    db.all(`SELECT lieux_dits.*, users.username FROM lieux_dits LEFT JOIN users ON lieux_dits.user_id = users.id WHERE lieux_dits.is_hidden = 0`, [], (err, rows) => {
         if (err) return res.status(500).json({ error: err.message });
         res.json(rows);
     });
@@ -372,12 +378,12 @@ app.put('/api/lieux/:id', authenticateToken, (req, res) => {
 app.delete('/api/lieux/:id', authenticateToken, (req, res) => {
     if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
     if (req.user.username === 'admin') {
-        db.run(`DELETE FROM lieux_dits WHERE id = ?`, [req.params.id], function(err) {
+        db.run(`UPDATE lieux_dits SET is_hidden = 1 WHERE id = ?`, [req.params.id], function(err) {
             if (err) return res.status(500).json({ error: err.message });
             res.json({ success: this.changes > 0 });
         });
     } else {
-        db.run(`DELETE FROM lieux_dits WHERE id = ? AND user_id = ?`, [req.params.id, req.user.id], function(err) {
+        db.run(`UPDATE lieux_dits SET is_hidden = 1 WHERE id = ? AND user_id = ?`, [req.params.id, req.user.id], function(err) {
             if (err) return res.status(500).json({ error: err.message });
             res.json({ success: this.changes > 0 });
         });
@@ -386,7 +392,7 @@ app.delete('/api/lieux/:id', authenticateToken, (req, res) => {
 
 app.delete('/api/lieux/category/all', authenticateToken, (req, res) => {
     if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
-    db.run(`DELETE FROM lieux_dits WHERE user_id = ?`, [req.user.id], function(err) {
+    db.run(`UPDATE lieux_dits SET is_hidden = 1 WHERE user_id = ?`, [req.user.id], function(err) {
         if (err) return res.status(500).json({ error: err.message });
         res.json({ success: true, deleted: this.changes });
     });
