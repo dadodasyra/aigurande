@@ -67,6 +67,34 @@ const db = new sqlite3.Database('./database.sqlite', (err) => {
                 FOREIGN KEY (user_id) REFERENCES users(id)
             )`);
 
+            db.run(`CREATE TABLE IF NOT EXISTS line_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_type TEXT,
+                line_id INTEGER,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )`);
+
+            db.run(`CREATE TRIGGER IF NOT EXISTS lines_after_insert
+                AFTER INSERT ON lines
+                BEGIN
+                    INSERT INTO line_events (event_type, line_id) VALUES ('upsert', NEW.id);
+                END;
+            `);
+
+            db.run(`CREATE TRIGGER IF NOT EXISTS lines_after_update
+                AFTER UPDATE ON lines
+                BEGIN
+                    INSERT INTO line_events (event_type, line_id) VALUES ('upsert', NEW.id);
+                END;
+            `);
+
+            db.run(`CREATE TRIGGER IF NOT EXISTS lines_after_delete
+                AFTER DELETE ON lines
+                BEGIN
+                    INSERT INTO line_events (event_type, line_id) VALUES ('delete', OLD.id);
+                END;
+            `);
+
             db.run(`CREATE TABLE IF NOT EXISTS lieux_dits (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 title TEXT,
@@ -218,6 +246,64 @@ app.get('/api/lines', (req, res) => {
         if (err) return res.status(500).json({ error: err.message });
         res.json(rows);
     });
+});
+
+app.get('/api/lines/changes', (req, res) => {
+    const since = parseInt(req.query.since || '0', 10);
+    const limit = Math.min(parseInt(req.query.limit || '100', 10), 500);
+
+    db.all(
+        `SELECT
+            line_events.id AS event_id,
+            line_events.event_type,
+            line_events.line_id,
+            lines.id,
+            lines.color,
+            lines.type,
+            lines.coordinates,
+            lines.distance,
+            lines.user_id,
+            lines.created_at,
+            users.username
+         FROM line_events
+         LEFT JOIN lines ON lines.id = line_events.line_id
+         LEFT JOIN users ON users.id = lines.user_id
+         WHERE line_events.id > ?
+         ORDER BY line_events.id ASC
+         LIMIT ?`,
+        [since, limit],
+        (err, rows) => {
+            if (err) return res.status(500).json({ error: err.message });
+
+            const changes = rows.map((row) => {
+                if (row.event_type === 'delete') {
+                    return {
+                        eventId: row.event_id,
+                        type: 'delete',
+                        lineId: row.line_id
+                    };
+                }
+
+                return {
+                    eventId: row.event_id,
+                    type: 'upsert',
+                    lineId: row.line_id,
+                    line: row.id ? {
+                        id: row.id,
+                        color: row.color,
+                        type: row.type,
+                        coordinates: row.coordinates,
+                        distance: row.distance,
+                        user_id: row.user_id,
+                        created_at: row.created_at,
+                        username: row.username
+                    } : null
+                };
+            });
+
+            res.json({ changes });
+        }
+    );
 });
 
 app.post('/api/lines', authenticateToken, (req, res) => {

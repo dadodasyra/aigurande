@@ -344,17 +344,18 @@ function saveLine() {
     });
 }
 
-window.renderLineLocally = function(lineData) {
+window.renderLineLocally = function(lineData, options = {}) {
+    const skipRefresh = !!options.skipRefresh;
     let coords = lineData.coordinates || lineData.coords || [];
     if(typeof coords === 'string') coords = JSON.parse(coords);
 
     let group = L.featureGroup().addTo(map);
 
     // Invisible wide polyline for easier clicking on mobile
-    let invisibleLine = L.polyline(coords, {weight: 25, opacity: 0}).addTo(group);
+    L.polyline(coords, {weight: 25, opacity: 0}).addTo(group);
 
     // Visible polyline
-    let visibleLine = L.polyline(coords, {color: lineData.color, weight: 3}).addTo(group);
+    L.polyline(coords, {color: lineData.color, weight: 3}).addTo(group);
 
     let popupContent = `<strong>Réseau : ${lineData.type}</strong><br>Distance : ${lineData.distance} m<br><small>Tracé par ${lineData.username || 'Inconnu'} le ${formatTime(lineData.created_at)}</small>`;
 
@@ -377,9 +378,37 @@ window.renderLineLocally = function(lineData) {
 
     drawnLayers[lineData.id] = group;
     linesByData.push({ layer: group, data: lineData });
-    renderLegend();
-    updateVisibility();
+    if (!skipRefresh) {
+        renderLegend();
+        updateVisibility();
+    }
 };
+
+function removeLineLocally(lineId, options = {}) {
+    const skipRefresh = !!options.skipRefresh;
+    if (drawnLayers[lineId]) {
+        map.removeLayer(drawnLayers[lineId]);
+        delete drawnLayers[lineId];
+    }
+    linesByData = linesByData.filter(i => !(String(i.data.id) === String(lineId) && !i.data.isLieu));
+    if (!skipRefresh) {
+        renderLegend();
+        updateVisibility();
+    }
+}
+
+function upsertLineLocally(lineData, options = {}) {
+    const normalized = { ...lineData };
+    if (typeof normalized.coordinates === 'string') {
+        try { normalized.coordinates = JSON.parse(normalized.coordinates); } catch (e) {}
+    }
+    removeLineLocally(normalized.id, { skipRefresh: true });
+    window.renderLineLocally(normalized, { skipRefresh: true });
+    if (!options.skipRefresh) {
+        renderLegend();
+        updateVisibility();
+    }
+}
 
 window.syncOfflineLines = async function() {
     if(offlineLinesQueue.length === 0 || !token) return;
@@ -422,37 +451,59 @@ function loadSavedLines() {
         .then(res => res.json())
         .then(data => {
             if (data.error) return;
-            data.forEach(line => {
-                try {
-                    let coords = JSON.parse(line.coordinates);
-                    let group = L.featureGroup().addTo(map);
-                    L.polyline(coords, {weight: 20, opacity: 0}).addTo(group);
-                    // Visible thin layer
-                    L.polyline(coords, {color: line.color, weight: 3}).addTo(group);
-
-                    bindLinePopup(group, line);
-                    drawnLayers[line.id] = group;
-                    linesByData.push({ layer: group, data: line });
-                } catch(e) { }
-            });
+            data.forEach(line => upsertLineLocally(line, { skipRefresh: true }));
 
             // apply offline lines
             const offlineLinesQueue = JSON.parse(localStorage.getItem('offlineLines') || '[]');
             offlineLinesQueue.forEach(lineData => {
-                window.renderLineLocally(lineData);
-            });
-
-            data.forEach(lineData => {
-// Ensure we don't duplicate
-                if (!drawnLayers[lineData.id]) {
-                    window.renderLineLocally(lineData);
-                }
+                upsertLineLocally(lineData, { skipRefresh: true });
             });
 
             loadSavedLieux();
             renderLegend();
             updateVisibility();
+
+            if (typeof startLinesAutoRefresh === 'function') {
+                startLinesAutoRefresh();
+            }
         });
+}
+
+let lineRefreshTimer = null;
+let lastLineEventId = parseInt(localStorage.getItem('lastLineEventId') || '0', 10);
+if (Number.isNaN(lastLineEventId)) lastLineEventId = 0;
+
+async function refreshLineChanges() {
+    if (!navigator.onLine || document.hidden) return;
+
+    try {
+        const res = await fetch(`/api/lines/changes?since=${lastLineEventId}&limit=150`);
+        if (!res.ok) return;
+        const payload = await res.json();
+        const changes = payload.changes || [];
+        if (changes.length === 0) return;
+
+        changes.forEach(change => {
+            if (change.type === 'delete') {
+                removeLineLocally(change.lineId, { skipRefresh: true });
+            } else if (change.type === 'upsert' && change.line) {
+                upsertLineLocally(change.line, { skipRefresh: true });
+            }
+            if (change.eventId > lastLineEventId) lastLineEventId = change.eventId;
+        });
+
+        localStorage.setItem('lastLineEventId', String(lastLineEventId));
+        renderLegend();
+        updateVisibility();
+    } catch (err) {
+        // Keep polling on transient errors.
+    }
+}
+
+window.startLinesAutoRefresh = function() {
+    if (lineRefreshTimer) clearInterval(lineRefreshTimer);
+    refreshLineChanges();
+    lineRefreshTimer = setInterval(refreshLineChanges, 5000);
 }
 
 window.loadSavedLieux = function() {
@@ -574,6 +625,82 @@ window.deleteLieuDit = function(lieuId) {
                 }
                 linesByData = linesByData.filter(i => !(i.data.isLieu && String(i.data.lieuData.id) === String(lieuId)));
                 renderLegend();
+            }
+        });
+    });
+}
+
+window.editLine = function(lineId) {
+    const item = linesByData.find(i => String(i.data.id) === String(lineId) && !i.data.isLieu);
+    if (!item) return;
+
+    const lineData = item.data;
+    const owner = lineData.username;
+    if (!token || !(currentUser === 'admin' || currentUser === owner)) return;
+
+    const coords = typeof lineData.coordinates === 'string'
+        ? JSON.parse(lineData.coordinates)
+        : (lineData.coordinates || lineData.coords || []);
+
+    currentLineCoords = [...coords];
+    redoStack = [];
+
+    const select = document.getElementById('draw-type');
+    let found = false;
+    for (let option of select.options) {
+        try {
+            const optVal = JSON.parse(option.value);
+            if (optVal.type === lineData.type) {
+                select.value = option.value;
+                found = true;
+                break;
+            }
+        } catch (e) {}
+    }
+    if (!found) {
+        select.value = 'custom';
+        document.getElementById('custom-draw-type').value = lineData.type || 'Autre';
+        document.getElementById('custom-draw-color').value = lineData.color || '#ff9900';
+    }
+
+    if (!isDrawMode) toggleDrawMode();
+    updateDrawColor();
+    redrawCurrentLine();
+
+    if (String(lineData.id).startsWith('offline_')) {
+        offlineLinesQueue = offlineLinesQueue.filter(i => String(i.id) !== String(lineData.id));
+        localStorage.setItem('offlineLines', JSON.stringify(offlineLinesQueue));
+        removeLineLocally(lineData.id);
+        map.closePopup();
+        return;
+    }
+
+    fetch(`/api/lines/${lineData.id}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': 'Bearer ' + token }
+    }).then(() => {
+        removeLineLocally(lineData.id);
+        map.closePopup();
+    });
+}
+
+window.deleteLine = function(lineId) {
+    customConfirm('Supprimer ce tracé réseau ?', () => {
+        if (String(lineId).startsWith('offline_')) {
+            offlineLinesQueue = offlineLinesQueue.filter(i => String(i.id) !== String(lineId));
+            localStorage.setItem('offlineLines', JSON.stringify(offlineLinesQueue));
+            removeLineLocally(lineId);
+            map.closePopup();
+            return;
+        }
+
+        fetch(`/api/lines/${lineId}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': 'Bearer ' + token }
+        }).then(res => {
+            if (res.ok) {
+                removeLineLocally(lineId);
+                map.closePopup();
             }
         });
     });
