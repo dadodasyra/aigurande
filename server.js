@@ -16,7 +16,7 @@ app.use('/assets', express.static(path.join(__dirname, 'assets')));
 
 // Request Logging Middleware
 app.use((req, res, next) => {
-    console.log(`[SERVER] ${new Date().toISOString()} - ${req.method} ${req.originalUrl}`);
+    console.log(`${new Date().toLocaleTimeString('fr-FR', { timeZone: 'Europe/Paris' })} - ${req.method} ${req.originalUrl}`);
     next();
 });
 
@@ -25,43 +25,61 @@ const db = new sqlite3.Database('./database.sqlite', (err) => {
     if (err) {
         console.error("[SERVER ERROR] Database connection error:", err.message);
     } else {
-        console.log("[SERVER] Connected to SQLite database.");
-        db.run(`CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE,
-            password TEXT
-        )`);
+        db.serialize(() => {
+            // Check if database is perfectly initializable...
+            db.get("SELECT name FROM sqlite_master WHERE type='table' AND name='users'", (err, row) => {
+                if (!row) {
+                    console.log("Connected to SQLite database.");
+                    db.run(`CREATE TABLE IF NOT EXISTS users (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        username TEXT UNIQUE,
+                        password TEXT
+                    )`);
 
-        db.run(`CREATE TABLE IF NOT EXISTS notes (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            parcel_id TEXT,
-            user_id INTEGER,
-            type TEXT,
-            content TEXT,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (user_id) REFERENCES users(id)
-        )`);
+                    db.run(`CREATE TABLE IF NOT EXISTS notes (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        parcel_id TEXT,
+                        user_id INTEGER,
+                        type TEXT,
+                        content TEXT,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY (user_id) REFERENCES users(id)
+                    )`);
 
-        db.run(`CREATE TABLE IF NOT EXISTS public_notes (
-            parcel_id TEXT PRIMARY KEY,
-            content TEXT,
-            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            user_id INTEGER,
-            FOREIGN KEY (user_id) REFERENCES users(id)
-        )`, () => {
-            // Try to add column if it was created in a previous version
-            db.run(`ALTER TABLE public_notes ADD COLUMN user_id INTEGER`, () => {});
-        });
+                    db.run(`CREATE TABLE IF NOT EXISTS public_notes (
+                        parcel_id TEXT PRIMARY KEY,
+                        content TEXT,
+                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        user_id INTEGER,
+                        FOREIGN KEY (user_id) REFERENCES users(id)
+                    )`, () => {
+                        // Try to add column if it was created in a previous version
+                        db.run(`ALTER TABLE public_notes ADD COLUMN user_id INTEGER`, () => {});
+                    });
 
-        // Seed an admin user (password: admin123)
-        bcrypt.hash('admin123', 10, (err, hash) => {
-            db.run(`INSERT OR IGNORE INTO users (id, username, password) VALUES (1, 'admin', ?)`, [hash]);
+                    db.run(`CREATE TABLE IF NOT EXISTS lines (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        color TEXT,
+                        type TEXT,
+                        coordinates TEXT,
+                        distance REAL,
+                        user_id INTEGER,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        FOREIGN KEY (user_id) REFERENCES users(id)
+                    )`);
+
+                    // Seed an admin user
+                    bcrypt.hash(process.env.DEFAULT_ADMIN_PASSWORD || "admin123", 10, (err, hash) => {
+                        db.run(`INSERT OR IGNORE INTO users (id, username, password) VALUES (1, 'admin', ?)`, [hash]);
+                    });
+                }
+            });
         });
     }
 });
 
 // Authentication Middleware
-function authenticateToken(req, res, next) {
+const authenticateToken = (req, res, next) => {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
 
@@ -96,26 +114,26 @@ app.post('/api/users', authenticateToken, (req, res) => {
     bcrypt.hash(password, 10, (err, hash) => {
         if (err) return res.status(500).json({ error: 'Hashing error' });
         db.run(`INSERT INTO users (username, password) VALUES (?, ?)`, [username, hash], function(err) {
-            if (err) return res.status(400).json({ error: 'Username already exists' });
-            console.log(`[SERVER] Admin created new user: ${username}`);
-            res.status(201).json({ success: true, id: this.lastID, username });
+            if (err) return res.status(500).json({ error: 'Username already exists' });
+            console.log(`Admin created new user: ${username}`);
+            res.status(201).json({ message: 'User created successfully', id: this.lastID, username });
         });
     });
 });
 
 app.post('/api/login', (req, res) => {
-    console.log(`[SERVER] Login attempt for user: ${req.body.username}`);
+    console.log(`Login attempt for user: ${req.body.username}`);
     const { username, password } = req.body;
     db.get(`SELECT * FROM users WHERE username = ?`, [username], (err, user) => {
         if (err || !user) {
-            console.log(`[SERVER] Login failed for user: ${username} (Not found)`);
-            return res.status(401).json({ error: 'Invalid credentials' });
+            console.log(`Login failed for user: ${username} (Not found)`);
+            return res.status(401).json({ error: 'User not found' });
         }
 
         bcrypt.compare(password, user.password, (err, match) => {
             if (match) {
-                console.log(`[SERVER] Login successful for user: ${username}`);
-                const token = jwt.sign({ id: user.id, username: user.username }, SECRET_KEY, { expiresIn: '7d' });
+                console.log(`Login successful for user: ${username}`);
+                const token = jwt.sign({ id: user.id, username: user.username }, SECRET_KEY, { expiresIn: '1y' });
                 res.json({ token, username: user.username });
             } else {
                 res.status(401).json({ error: 'Invalid credentials' });
@@ -157,29 +175,72 @@ app.put('/api/notes/:id', authenticateToken, (req, res) => {
     });
 });
 
-// Add a note
 app.post('/api/notes/:parcelId', authenticateToken, (req, res) => {
-    const { type, content } = req.body;
-    const parcelId = req.params.parcelId;
-
-    console.log(`[SERVER] Saving note for parcel ${parcelId} by user ${req.user ? req.user.username : 'Anonymous'}`);
-
-    // Require auth to post any note
-    if (!req.user) return res.status(401).json({ error: 'You must be logged in to create notes.' });
-
-    if (!content || !type || !['public', 'private'].includes(type)) {
-        return res.status(400).json({ error: 'Invalid input' });
-    }
-
-    db.run(`INSERT INTO notes (parcel_id, user_id, type, content) VALUES (?, ?, ?, ?)`,
-        [parcelId, req.user.id, type, content],
+    if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+    const content = req.body.content;
+    const type = req.body.type || 'private';
+    db.run(
+        `INSERT INTO notes (parcel_id, content, type, user_id) VALUES (?, ?, ?, ?)`,
+        [req.params.parcelId, content, type, req.user.id],
         function(err) {
             if (err) return res.status(500).json({ error: err.message });
-            res.status(201).json({ id: this.lastID, parcel_id: parcelId, type, content, username: req.user.username });
+            res.json({ id: this.lastID, success: true, user_id: req.user.id });
         }
     );
 });
 
-app.listen(PORT, () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+app.delete('/api/notes/:id', authenticateToken, (req, res) => {
+    if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+    db.run(`DELETE FROM notes WHERE id = ? AND user_id = ?`, [req.params.id, req.user.id], function(err) {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ success: this.changes > 0 });
+    });
 });
+
+// Lines routes
+app.get('/api/lines', (req, res) => {
+    db.all(`SELECT lines.*, users.username FROM lines LEFT JOIN users ON lines.user_id = users.id`, [], (err, rows) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json(rows);
+    });
+});
+
+app.post('/api/lines', authenticateToken, (req, res) => {
+    if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+    const { color, type, coordinates, distance } = req.body;
+    const coordsStr = JSON.stringify(coordinates);
+    db.run(`INSERT INTO lines (color, type, coordinates, distance, user_id) VALUES (?, ?, ?, ?, ?)`,
+        [color, type, coordsStr, distance, req.user.id], function(err) {
+        if (err) return res.status(500).json({ error: err.message });
+        console.log(`${new Date().toLocaleTimeString('fr-FR', { timeZone: 'Europe/Paris' })} - POST /api/lines: ID ${this.lastID} | ${type} | ${distance}m | par ${req.user.username}`);
+        res.json({ id: this.lastID });
+    });
+});
+
+app.delete('/api/lines/:id', authenticateToken, (req, res) => {
+    if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+    if (req.user.username === 'admin') {
+        db.run(`DELETE FROM lines WHERE id = ?`, [req.params.id], function(err) {
+            if (err) return res.status(500).json({ error: err.message });
+            res.json({ success: this.changes > 0 });
+        });
+    } else {
+        db.run(`DELETE FROM lines WHERE id = ? AND user_id = ?`, [req.params.id, req.user.id], function(err) {
+            if (err) return res.status(500).json({ error: err.message });
+            res.json({ success: this.changes > 0 });
+        });
+    }
+});
+
+app.delete('/api/lines/category/:type', authenticateToken, (req, res) => {
+    if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+    db.run(`DELETE FROM lines WHERE type = ? AND user_id = ?`, [req.params.type, req.user.id], function(err) {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ success: true, deleted: this.changes });
+    });
+});
+
+app.listen(PORT, () => {
+    console.log(`[SERVER] Server running on http://localhost:${PORT}`);
+});
+

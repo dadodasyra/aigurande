@@ -7,15 +7,33 @@ let currentUser = localStorage.getItem('username') || null;
 // Initialization array for offline Notes
 let offlineNotesQueue = JSON.parse(localStorage.getItem('offlineNotes') || '[]');
 
+// Draw Mode Variables
+let isDrawMode = false;
+let currentLineCoords = [];
+let redoStack = [];
+let currentLineLayer = null;
+let currentDrawColor = 'red';
+let currentDrawType = 'Électricité';
+let drawnLayers = {}; // Store layers by ID
+
+// Legend management Data
+let linesByData = []; // Array of { layer: featureGroup, data: { id, type, ... } }
+let hiddenCategories = new Set();
+let isParcelsHidden = false;
+
 function formatTime(dateStr) {
     if (!dateStr) return '';
+    // Gestion robuste si c'est un objet Date
+    if (typeof dateStr === 'object' || typeof dateStr === 'number') {
+        return new Date(dateStr).toLocaleTimeString('fr-FR', { timeZone: 'Europe/Paris', hour: '2-digit', minute: '2-digit' });
+    }
     const d = dateStr.endsWith('Z') ? new Date(dateStr) : new Date(dateStr + 'Z');
-    return d.toLocaleString('fr-FR', { timeZone: 'Europe/Paris' });
+    return d.toLocaleTimeString('fr-FR', { timeZone: 'Europe/Paris', hour: '2-digit', minute: '2-digit' });
 }
 
 // Add a simple client-side logger
 function clientLog(msg) {
-    console.log(`[CLIENT] ${new Date().toISOString()} - ${msg}`);
+    console.log(`${new Date().toLocaleTimeString('fr-FR', { timeZone: 'Europe/Paris' })} - ${msg}`);
 }
 
 // Initialize the Map
@@ -23,14 +41,15 @@ function initMap() {
     clientLog('Initializing Map');
     // 46°27'10.2"N 1°51'36.4"E -> 46.4528333, 1.8601111
     
-    const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 });
-    const ign = L.tileLayer('https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2&STYLE=normal&FORMAT=image/png&TILEMATRIXSET=PM&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}', { maxZoom: 19 });
-    const sat1 = L.tileLayer('https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=ORTHOIMAGERY.ORTHOPHOTOS&STYLE=normal&FORMAT=image/jpeg&TILEMATRIXSET=PM&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}', { maxZoom: 19 });
-    const sat2 = L.tileLayer('https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19 });
+    const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 21, maxNativeZoom: 19, attribution: '© OpenStreetMap contributors' });
+    const ign = L.tileLayer('https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2&STYLE=normal&FORMAT=image/png&TILEMATRIXSET=PM&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}', { maxZoom: 21, maxNativeZoom: 19, attribution: '© IGN' });
+    const sat1 = L.tileLayer('https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=ORTHOIMAGERY.ORTHOPHOTOS&STYLE=normal&FORMAT=image/jpeg&TILEMATRIXSET=PM&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}', { maxZoom: 21, maxNativeZoom: 19, attribution: '© IGN' });
+    const sat2 = L.tileLayer('https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 21, maxNativeZoom: 19, attribution: 'Tiles © Esri' });
 
     map = L.map('map', { 
         zoomControl: false, 
         attributionControl: false,
+        maxZoom: 21,
         layers: [osm] // Couche par défaut
     }).setView([46.4528333, 1.8601111], 15);
 
@@ -42,6 +61,17 @@ function initMap() {
         "Satellite 2": sat2
     };
     L.control.layers(baseMaps, null, { position: 'bottomleft' }).addTo(map);
+
+    // Custom Legend Control Button
+    const LegendControl = L.Control.extend({
+        options: { position: 'bottomleft' },
+        onAdd: function() {
+            let container = L.DomUtil.create('div', 'leaflet-bar leaflet-control');
+            container.innerHTML = '<a href="#" title="Légende" onclick="toggleLegend(event); return false;" style="font-size:24px; width:44px; height:44px; display:flex; align-items:center; justify-content:center; background:#fff; text-decoration:none; color:#333;">📋</a>';
+            return container;
+        }
+    });
+    map.addControl(new LegendControl());
 
     // Add Center Marker
     L.marker([46.4528333, 1.8601111]).addTo(map)
@@ -65,13 +95,21 @@ function initMap() {
                 },
                 onEachFeature: onEachFeature
             }).addTo(map);
+
+            // Load saved lines
+            loadSavedLines();
         })
         .catch(err => console.error("Error loading GeoJSON: ", err));
+
+    // Map click for drawing
+    map.on('click', onMapClick);
 }
 
 function onEachFeature(feature, layer) {
     layer.on({
         click: function(e) {
+            if (isDrawMode) return; // Ne pas ouvrir le panel si on trace une ligne
+
             // Highlight
             if (geojsonLayer) geojsonLayer.resetStyle();
             layer.setStyle({ weight: 3, color: '#ff0000', fillOpacity: 0.3 });
@@ -119,380 +157,74 @@ function closePanel() {
     clientLog('Panel closed');
 }
 
-function loadNotes(parcelId) {
-    clientLog(`Loading notes for ${parcelId}`);
-    let headers = {};
-    if (token) headers['Authorization'] = 'Bearer ' + token;
-
-    const publicDisplay = document.getElementById('public-note-display');
-    const publicInput = document.getElementById('public-note-input');
-    const editPublicBtn = document.getElementById('edit-public-btn');
-    
-    // Setup Loading State
-    publicDisplay.innerText = 'Chargement en cours...';
-    if(editPublicBtn) editPublicBtn.disabled = true;
-
-    // Load Public Note
-    fetch(`/api/public-note/${parcelId}`)
-        .then(res => {
-            if(!res.ok) throw new Error('Failed to fetch public note');
-            return res.json();
-        })
-        .then(data => {
-            clientLog('Public note fetched');
-            if(editPublicBtn) editPublicBtn.disabled = false;
-            
-            if (data.content) {
-                let dateStr = formatTime(data.updated_at);
-                let authorStr = data.username ? ` par <strong>${data.username}</strong>` : '';
-                publicDisplay.innerHTML = `<p style="white-space: pre-wrap; margin:0 0 10px 0;">${data.content}</p>
-                                     <small style="color: gray;">Modifié${authorStr} le ${dateStr}</small>`;
-                publicInput.value = data.content;
-            } else {
-                publicDisplay.innerText = 'Aucune note publique.';
-                publicInput.value = '';
-            }
-        })
-        .catch(err => {
-            clientLog(`Error fetching public note: ${err.message}`);
-            publicDisplay.innerText = 'Erreur de chargement (Hors ligne ?). Modification désactivée.';
-            if(editPublicBtn) editPublicBtn.disabled = true;
-        });
-
-    const individualContainer = document.getElementById('individual-notes');
-    individualContainer.innerHTML = '<p>Chargement des messages en cours...</p>';
-
-    // Load Individual Notes
-    fetch(`/api/notes/${parcelId}`, { headers })
-        .then(res => {
-            if(!res.ok) throw new Error('Failed to fetch private notes');
-            return res.json();
-        })
-        .then(data => {
-            clientLog('Individual notes fetched');
-            individualContainer.innerHTML = '';
-
-            if (data.length === 0) {
-                individualContainer.innerHTML = '<p>Aucun message personnel</p>';
-            }
-
-            data.forEach(note => {
-                const el = document.createElement('div');
-                el.className = 'note';
-
-                let actionHTML = '';
-                if (token && currentUser === note.username) {
-                    actionHTML = ` <button class="icon-btn" onclick="editIndividualNote(${note.id}, '${note.content.replace(/'/g, "\\'")}')">✏️ Edit</button>`;
-                }
-
-                el.innerHTML = `<strong>${note.username}</strong> (${formatTime(note.created_at)})${actionHTML}: <br> <span id="note-text-${note.id}">${note.content}</span>`;
-                individualContainer.appendChild(el);
-            });
-            
-            // Append offline queued notes for this parcel
-            const offlineForThis = offlineNotesQueue.filter(n => n.parcelId === parcelId);
-            offlineForThis.forEach(note => {
-                const el = document.createElement('div');
-                el.className = 'note';
-                el.innerHTML = `<strong>${note.username}</strong> <span class="offline-badge">Attente Synchronisation (Hors ligne)</span>: <br> <span>${note.content}</span>`;
-                individualContainer.appendChild(el);
-            });
-        })
-        .catch(err => {
-            clientLog(`Error fetching individual notes: ${err.message}`);
-            individualContainer.innerHTML = '<p>Erreur lors du chargement des messages. Cependant, vos nouvelles notes seront sauvegardées hors ligne.</p>';
-            
-            // Still display any queued notes if we're offline
-            const offlineForThis = offlineNotesQueue.filter(n => n.parcelId === parcelId);
-            if(offlineForThis.length > 0) individualContainer.innerHTML = '';
-            offlineForThis.forEach(note => {
-                const el = document.createElement('div');
-                el.className = 'note';
-                el.innerHTML = `<strong>${note.username}</strong> <span class="offline-badge">Attente Synchronisation (Hors ligne)</span>: <br> <span>${note.content}</span>`;
-                individualContainer.appendChild(el);
-            });
-        });
-}
-
-// Edit Public Note Actions
-function toggleMoreInfo() {
-    const moreInfo = document.getElementById('parcel-more-info');
-    const btn = document.getElementById('toggle-info-btn');
-    if (moreInfo.style.display === 'none') {
-        moreInfo.style.display = 'block';
-        btn.innerText = 'Voir moins ↑';
-    } else {
-        moreInfo.style.display = 'none';
-        btn.innerText = 'Voir plus ↓';
-    }
-}
-
-function startEditPublicNote() {
-    document.getElementById('public-note-display').style.display = 'none';
-    document.getElementById('edit-public-btn').style.display = 'none';
-    document.getElementById('public-note-editor').style.display = 'block';
-}
-
-function cancelEditPublicNote() {
-    document.getElementById('public-note-editor').style.display = 'none';
-    document.getElementById('public-note-display').style.display = 'block';
-    if(token) document.getElementById('edit-public-btn').style.display = 'inline-block';
-}
-
-function savePublicNote() {
-    if (!token) return;
-    const content = document.getElementById('public-note-input').value;
-
-    fetch(`/api/public-note/${currentParcelId}`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer ' + token
-        },
-        body: JSON.stringify({ content })
-    })
-    .then(res => {
-        if (res.ok) {
-            cancelEditPublicNote();
-            loadNotes(currentParcelId);
-        } else {
-            console.error("Erreur ajout note publique");
-        }
-    });
-}
-
-function editIndividualNote(noteId, oldContent) {
-    const newContent = prompt("Modifier votre note :", oldContent);
-    if (newContent !== null && newContent.trim() !== '') {
-        fetch(`/api/notes/${noteId}`, {
-            method: 'PUT',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': 'Bearer ' + token
-            },
-            body: JSON.stringify({ content: newContent })
-        }).then(res => {
-            if (res.ok) loadNotes(currentParcelId);
-        });
-    }
-}
-
-// Authentication handling
-function updateAuthUI() {
-    const btn = document.getElementById('auth-btn');
-    const info = document.getElementById('user-info');
-    const adminBtn = document.getElementById('admin-btn');
-
-    if (token && currentUser) {
-        btn.innerText = '🚪';
-        btn.title = 'Se déconnecter';
-        btn.onclick = logout;
-        info.innerText = currentUser;
-
-        if (currentUser === 'admin') adminBtn.style.display = 'block';
-        else adminBtn.style.display = 'none';
-
-        // Notes UI
-        document.getElementById('add-note-section').style.display = 'block';
-        document.getElementById('edit-public-btn').style.display = 'inline-block';
-        document.getElementById('login-prompt').style.display = 'none';
-    } else {
-        btn.innerText = '👤';
-        btn.title = 'Se connecter';
-        btn.onclick = openLogin;
-        info.innerText = '';
-        adminBtn.style.display = 'none';
-
-        // Notes UI
-        document.getElementById('add-note-section').style.display = 'none';
-        document.getElementById('edit-public-btn').style.display = 'none';
-        document.getElementById('login-prompt').style.display = 'block';
-    }
-    cancelEditPublicNote(); // Reset editor state
-}
-
-function openLogin() {
-    document.getElementById('login-modal').style.display = 'block';
-}
-
-function closeLogin() {
-    document.getElementById('login-modal').style.display = 'none';
-}
-
-function openAdmin() {
-    document.getElementById('admin-modal').style.display = 'block';
-    document.getElementById('admin-error').innerText = '';
-    document.getElementById('admin-success').innerText = '';
-}
-
-function closeAdmin() {
-    document.getElementById('admin-modal').style.display = 'none';
-}
-
-function logout() {
-    token = null;
-    currentUser = null;
-    localStorage.removeItem('token');
-    localStorage.removeItem('username');
-    updateAuthUI();
-    if (currentParcelId) loadNotes(currentParcelId);
-}
-
-document.getElementById('login-form').addEventListener('submit', function(e) {
-    e.preventDefault();
-    const u = document.getElementById('username').value;
-    const p = document.getElementById('password').value;
-    
-    fetch('/api/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: u, password: p })
-    })
-    .then(res => res.json().then(data => ({ status: res.status, body: data })))
-    .then(res => {
-        if (res.status === 200) {
-            token = res.body.token;
-            currentUser = res.body.username;
-            localStorage.setItem('token', token);
-            localStorage.setItem('username', currentUser);
-            document.getElementById('login-error').innerText = '';
-            closeLogin();
-            updateAuthUI();
-            if (currentParcelId) loadNotes(currentParcelId);
-        } else {
-            document.getElementById('login-error').innerText = res.body.error || 'Erreur inconnue';
-        }
-    });
-});
-
-document.getElementById('admin-form').addEventListener('submit', function(e) {
-    e.preventDefault();
-    const u = document.getElementById('new-username').value;
-    const p = document.getElementById('new-password').value;
-
-    fetch('/api/users', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer ' + token
-        },
-        body: JSON.stringify({ username: u, password: p })
-    })
-    .then(res => res.json().then(data => ({ status: res.status, body: data })))
-    .then(res => {
-        if (res.status === 201) {
-            document.getElementById('admin-success').innerText = `Utilisateur ${u} créé !`;
-            document.getElementById('admin-error').innerText = '';
-            document.getElementById('new-username').value = '';
-            document.getElementById('new-password').value = '';
-        } else {
-            document.getElementById('admin-error').innerText = res.body.error || 'Erreur inconnue';
-            document.getElementById('admin-success').innerText = '';
-        }
-    });
-});
-
-document.getElementById('add-note-btn').addEventListener('click', () => {
-    if (!token) return;
-    const content = document.getElementById('note-input').value;
-    const type = 'private'; // Always private/individual for this box
-
-    if (!content.trim()) return;
-
-    clientLog(`Attempting to send an individual note`);
-    document.getElementById('note-input').value = '';
-
-    // Optimistic fallback plan if offline
-    if (!navigator.onLine) {
-        queueOfflineNote(currentParcelId, content, type);
-        return;
-    }
-
-    fetch(`/api/notes/${currentParcelId}`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer ' + token
-        },
-        body: JSON.stringify({ content, type })
-    })
-    .then(res => {
-        if (res.ok) {
-            clientLog('Note saved to server');
-            loadNotes(currentParcelId);
-        } else {
-            throw new Error("Erreur ajout note via Fetch HTTP");
-        }
-    })
-    .catch(err => {
-        clientLog(`Error saving note to server, queueing offline: ${err.message}`);
-        queueOfflineNote(currentParcelId, content, type);
-    });
-});
-
-function queueOfflineNote(parcelId, content, type) {
-    clientLog(`Queuing offline note for parcel: ${parcelId}`);
-    offlineNotesQueue.push({ parcelId, content, type, username: currentUser });
-    localStorage.setItem('offlineNotes', JSON.stringify(offlineNotesQueue));
-    loadNotes(parcelId); // refresh view to show offline badge
-}
-
-async function syncOfflineNotes() {
-    if(offlineNotesQueue.length === 0 || !token) return;
-    
-    clientLog(`Syncing ${offlineNotesQueue.length} offline notes...`);
-    const backupQueue = [...offlineNotesQueue];
-    offlineNotesQueue = [];
-    localStorage.removeItem('offlineNotes');
-
-    for(let note of backupQueue) {
-        try {
-            await fetch(`/api/notes/${note.parcelId}`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': 'Bearer ' + token
-                },
-                body: JSON.stringify({ content: note.content, type: note.type })
-            });
-            clientLog(`Successfully synced queued note for ${note.parcelId}`);
-        } catch (e) {
-            clientLog(`Failed syncing note for ${note.parcelId}, returning to queue`);
-            offlineNotesQueue.push(note);
-        }
-    }
-    localStorage.setItem('offlineNotes', JSON.stringify(offlineNotesQueue));
-    if(currentParcelId) loadNotes(currentParcelId);
-}
-
-// Listen to network status changes
-window.addEventListener('online', syncOfflineNotes);
-
 // Geolocation & Recenter Map
-let userMarker, userCircle;
-function locateUser(e) {
-    if(e) e.preventDefault();
-    map.locate({setView: true, maxZoom: 16});
+let userPosition = null;
+let userMarker;
+let userCircle;
+let isPositionHidden = false;
+
+window.onLocationFound = function(e) {
+    var radius = e.accuracy / 2;
+
+    if (userMarker) {
+        map.removeLayer(userMarker);
+    }
+    if (userCircle) {
+        map.removeLayer(userCircle);
+    }
+
+    userMarker = L.marker(e.latlng).bindPopup("Vous êtes à " + radius + " mètres de ce point");
+    userCircle = L.circle(e.latlng, radius, {
+        color: 'red',
+        fillColor: '#f03',
+        fillOpacity: 0.15
+    });
+
+    if (!isPositionHidden) {
+        userMarker.addTo(map);
+        userCircle.addTo(map);
+    }
 }
 
-function recenterMap(e) {
-    if(e) e.preventDefault();
-    map.setView([46.4528333, 1.8601111], 15);
+window.togglePosition = function(isVisible) {
+    isPositionHidden = !isVisible;
+    if (typeof updateVisibility === 'function') {
+        updateVisibility();
+    }
 }
 
-function onLocationFound(e) {
-    const radius = Math.round(e.accuracy);
+let offlineLinesQueue = JSON.parse(localStorage.getItem('offlineLines') || '[]');
 
-    if (userMarker) map.removeLayer(userMarker);
-    if (userCircle) map.removeLayer(userCircle);
+window.customPrompt = function(message, defaultValue, callback) {
+    document.getElementById('prompt-title').innerText = message;
+    document.getElementById('prompt-input').value = defaultValue || '';
+    document.getElementById('prompt-modal').style.display = 'block';
 
-    userMarker = L.marker(e.latlng).addTo(map);
-    userCircle = L.circle(e.latlng, radius).addTo(map);
+    // Cleanup previous listeners by replacing the element
+    let oldBtn = document.getElementById('prompt-ok-btn');
+    let newBtn = oldBtn.cloneNode(true);
+    oldBtn.parentNode.replaceChild(newBtn, oldBtn);
 
-    const geoInfo = document.getElementById('geo-info');
-    geoInfo.innerText = `~ ${radius} m`;
-    geoInfo.style.display = 'block';
-    setTimeout(() => { geoInfo.style.display = 'none'; }, 5000);
+    newBtn.onclick = function() {
+        document.getElementById('prompt-modal').style.display = 'none';
+        callback(document.getElementById('prompt-input').value);
+    };
+}
+
+window.customConfirm = function(message, callback) {
+    document.getElementById('confirm-title').innerText = "Confirmation";
+    document.getElementById('confirm-message').innerText = message;
+    document.getElementById('confirm-modal').style.display = 'block';
+
+    // Cleanup previous listeners by replacing the element
+    let oldBtn = document.getElementById('confirm-ok-btn');
+    let newBtn = oldBtn.cloneNode(true);
+    oldBtn.parentNode.replaceChild(newBtn, oldBtn);
+
+    newBtn.onclick = function() {
+        document.getElementById('confirm-modal').style.display = 'none';
+        callback();
+    };
 }
 
 // Panel Resize via Handle
@@ -548,3 +280,19 @@ window.onload = () => {
         alert("Géolocalisation refusée ou impossible: " + e.message);
     });
 };
+
+window.addEventListener('online', () => {
+    syncOfflineNotes();
+    if (typeof syncOfflineLines === 'function') syncOfflineLines();
+    clientLog("System is online. Syncing offline data...");
+});
+
+window.locateUser = function(e) {
+    if (e) e.preventDefault();
+    map.locate({setView: true, maxZoom: 18});
+}
+
+window.recenterMap = function(e) {
+    if (e) e.preventDefault();
+    map.setView([46.4528333, 1.8601111], 15);
+}
