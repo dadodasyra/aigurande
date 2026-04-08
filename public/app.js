@@ -71,7 +71,11 @@ function initMap() {
         "Satellite 1": sat1,
         "Satellite 2": sat2
     };
-    L.control.layers(baseMaps, null, { position: 'bottomleft' }).addTo(map);
+    const isMobileViewport = window.innerWidth <= 768;
+    const layersControl = L.control.layers(baseMaps, null, { position: isMobileViewport ? 'topleft' : 'bottomleft' }).addTo(map);
+    if (isMobileViewport && layersControl && layersControl.getContainer) {
+        layersControl.getContainer().classList.add('layers-control-mobile');
+    }
 
     // Custom Legend Control Button
     const LegendControl = L.Control.extend({
@@ -288,6 +292,143 @@ window.customConfirm = function(message, callback) {
         document.getElementById('confirm-modal').style.display = 'none';
         callback();
     };
+}
+
+let currentCommentsEntityRef = null;
+
+window.makeEntityRef = function(entityType, id) {
+    const prefix = entityType === 'lieu' ? 'lieu' : 'line';
+    return `${prefix}:${id}`;
+}
+
+window.openCommentsModal = function(entityType, id, label) {
+    if (String(id).startsWith('offline_')) {
+        customConfirm('Les commentaires ne sont pas disponibles hors ligne.', () => {});
+        return;
+    }
+
+    currentCommentsEntityRef = window.makeEntityRef(entityType, id);
+    document.getElementById('comments-title').innerText = `Commentaires - ${label || currentCommentsEntityRef}`;
+    document.getElementById('comments-input').value = '';
+    document.getElementById('comments-modal').style.display = 'block';
+
+    let oldBtn = document.getElementById('comments-send-btn');
+    let newBtn = oldBtn.cloneNode(true);
+    oldBtn.parentNode.replaceChild(newBtn, oldBtn);
+
+    newBtn.onclick = function() {
+        const content = document.getElementById('comments-input').value.trim();
+        if (!content) return;
+        if (!token) {
+            customConfirm('Connectez-vous pour commenter.', () => {});
+            return;
+        }
+
+        fetch(`/api/comments/${encodeURIComponent(currentCommentsEntityRef)}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer ' + token
+            },
+            body: JSON.stringify({ content })
+        })
+        .then(res => {
+            if (!res.ok) throw new Error('Comment save failed');
+            return res.json();
+        })
+        .then(() => {
+            document.getElementById('comments-input').value = '';
+            loadComments(currentCommentsEntityRef);
+        })
+        .catch(() => {
+            customConfirm('Impossible d\'ajouter le commentaire.', () => {});
+        });
+    };
+
+    loadComments(currentCommentsEntityRef);
+}
+
+window.closeCommentsModal = function() {
+    document.getElementById('comments-modal').style.display = 'none';
+    currentCommentsEntityRef = null;
+}
+
+window.deleteComment = function(commentId) {
+    if (!token) return;
+    fetch(`/api/comments/${commentId}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': 'Bearer ' + token }
+    })
+    .then(res => {
+        if (res.ok && currentCommentsEntityRef) {
+            loadComments(currentCommentsEntityRef);
+        }
+    });
+}
+
+window.editComment = function(commentId, currentContent) {
+    if (!token) return;
+    customPrompt('Modifier le commentaire', currentContent || '', (newContent) => {
+        const content = String(newContent || '').trim();
+        if (!content) return;
+
+        fetch(`/api/comments/${commentId}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer ' + token
+            },
+            body: JSON.stringify({ content })
+        })
+        .then(res => {
+            if (res.ok && currentCommentsEntityRef) {
+                loadComments(currentCommentsEntityRef);
+            }
+        });
+    });
+}
+
+function loadComments(entityRef) {
+    fetch(`/api/comments/${encodeURIComponent(entityRef)}`)
+        .then(res => {
+            if (!res.ok) throw new Error('Comment load failed');
+            return res.json();
+        })
+        .then(comments => {
+            const list = document.getElementById('comments-list');
+            const escapeHtml = (value) => String(value || '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+
+            if (!comments || comments.length === 0) {
+                list.innerHTML = '<p style="margin:0; color:#666; font-size:13px;">Aucun commentaire.</p>';
+                return;
+            }
+
+            let html = '';
+            comments.forEach(item => {
+                const renderedContent = escapeHtml(item.content).replace(/\r?\n/g, '<br>');
+                html += `<div style="background:#fff; border:1px solid #eee; border-radius:6px; padding:8px; margin-bottom:6px;">`;
+                html += `<div style="font-size:13px; margin-bottom:4px;">${renderedContent}</div>`;
+                html += `<div style="display:flex; justify-content:space-between; align-items:center; font-size:11px; color:#666;">`;
+                html += `<span>${item.username || 'Inconnu'} - ${formatTime(item.created_at)}</span>`;
+                if (token && (currentUser === 'admin' || currentUser === item.username)) {
+                    const safeContent = String(item.content || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n');
+                    html += `<div style="display:flex; gap:4px;">`;
+                    html += `<button class="btn btn-small" onclick="editComment('${item.id}','${safeContent}')">✏️</button>`;
+                    html += `<button class="btn btn-small" style="color:#b40000;" onclick="deleteComment('${item.id}')">🗑️</button>`;
+                    html += `</div>`;
+                }
+                html += `</div></div>`;
+            });
+            list.innerHTML = html;
+        })
+        .catch(() => {
+            document.getElementById('comments-list').innerHTML = '<p style="margin:0; color:#b40000; font-size:13px;">Erreur de chargement des commentaires.</p>';
+        });
 }
 
 // Panel Resize via Handle

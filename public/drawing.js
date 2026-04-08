@@ -395,7 +395,7 @@ function renderCatalog() {
         });
         html += '</div>';
     });
-    html += `<button class="btn btn-small" style="width:100%; margin-top:8px;" onclick="exportCatalogMode('lieux')">Exporter JSON (tous les lieux-dits)</button>`;
+    html += `<button class="btn btn-small" style="width:100%; margin-top:8px;" onclick="exportCatalogMode('lieux')">Exporter JSON</button>`;
     content.innerHTML = html;
 }
 
@@ -545,6 +545,7 @@ window.renderLineLocally = function(lineData, options = {}) {
     L.polyline(coords, {color: lineData.color, weight: 3}).addTo(group);
 
     let popupContent = `<strong>Réseau : ${lineData.type}</strong><br>Distance : ${lineData.distance} m<br><small>Tracé par ${lineData.username || 'Inconnu'} le ${formatTime(lineData.created_at)}</small>`;
+    popupContent += `<br><button class="btn btn-small" style="margin-top:5px; margin-right:5px;" onclick="openCommentsModal('line','${lineData.id}','Ligne #${lineData.id}')">💬 Commentaires</button>`;
 
     if (String(lineData.id).startsWith('offline_')) {
         popupContent += `<br><span class="offline-badge">Hors ligne</span>`;
@@ -731,6 +732,7 @@ function renderLieuDit(lieu) {
 function bindLieuPopup(marker, lieu) {
     let iconChar = lieu.icon || '📌';
     let popupContent = `<strong>${iconChar} ${lieu.title}</strong><br><em>${lieu.description || ''}</em><br><small>Ajouté par ${lieu.username || 'Inconnu'} le ${formatTime(lieu.created_at)}</small>`;
+    popupContent += `<br><button class="btn btn-small" style="margin-top:5px; margin-right:5px;" onclick="openCommentsModal('lieu','${lieu.id}','Lieu-dit #${lieu.id}')">💬 Commentaires</button>`;
 
     if (token && (currentUser === 'admin' || currentUser === lieu.username)) {
         popupContent += `<br><button class="btn btn-small" style="background:#ccffcc; color:#005500; margin-top:5px; margin-right:5px; text-decoration:none;" onclick="editLieuDit('${lieu.id}')">✏️ Modifier</button>`;
@@ -895,6 +897,7 @@ window.deleteLine = function(lineId) {
 
 function bindLinePopup(layer, lineData) {
     let popupContent = `<strong>Réseau : ${lineData.type}</strong><br>Distance : ${lineData.distance} m<br><small>Tracé par ${lineData.username || 'Inconnu'} le ${formatTime(lineData.created_at)}</small>`;
+    popupContent += `<br><button class="btn btn-small" style="margin-top:5px; margin-right:5px;" onclick="openCommentsModal('line','${lineData.id}','Ligne #${lineData.id}')">💬 Commentaires</button>`;
 
     if (token && (currentUser === 'admin' || currentUser === lineData.username)) {
         popupContent += `<br><button class="btn btn-small" style="background:#ccffcc; color:#005500; margin-top:5px; margin-right:5px; text-decoration:none;" onclick="editLine('${lineData.id}')">✏️ Modifier</button>`;

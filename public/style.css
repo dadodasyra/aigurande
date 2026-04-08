@@ -183,6 +183,10 @@ body, html {
     -webkit-user-select: none;
 }
 
+.layers-control-mobile {
+    margin-top: 52px !important;
+}
+
 .modal {
     display: none;
     position: fixed;

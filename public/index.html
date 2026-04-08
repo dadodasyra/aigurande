@@ -162,6 +162,19 @@
         </div>
     </div>
 
+    <!-- Comments Modal -->
+    <div id="comments-modal" class="modal">
+        <div class="modal-content" style="max-width: 420px; text-align: left;">
+            <h3 id="comments-title" style="margin-top: 0;">Commentaires</h3>
+            <div id="comments-list" style="max-height: 240px; overflow-y: auto; border: 1px solid #eee; border-radius: 8px; padding: 8px; margin-bottom: 10px; background: #fafafa;"></div>
+            <textarea id="comments-input" placeholder="Ajouter un commentaire..."></textarea>
+            <div style="display:flex; gap:8px; justify-content:flex-end;">
+                <button id="comments-send-btn" class="btn primary-btn">Envoyer</button>
+                <button class="btn" onclick="closeCommentsModal()">Fermer</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Parcels Info Panel -->
     <div id="panel" class="panel hidden">
         <div id="panel-handle">

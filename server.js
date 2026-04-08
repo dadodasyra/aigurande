@@ -106,6 +106,18 @@ const db = new sqlite3.Database('./database.sqlite', (err) => {
                 FOREIGN KEY (user_id) REFERENCES users(id)
             )`);
 
+            db.run(`CREATE TABLE IF NOT EXISTS entity_comments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                entity_ref TEXT,
+                content TEXT,
+                user_id INTEGER,
+                is_hidden INTEGER DEFAULT 0,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            )`);
+
+            db.run(`CREATE INDEX IF NOT EXISTS idx_entity_comments_ref ON entity_comments(entity_ref)`);
+
             // Seed an admin user
             db.get("SELECT id FROM users WHERE username='admin'", (err, row) => {
                 if (!row) {
@@ -396,6 +408,89 @@ app.delete('/api/lieux/category/all', authenticateToken, (req, res) => {
         if (err) return res.status(500).json({ error: err.message });
         res.json({ success: true, deleted: this.changes });
     });
+});
+
+// Comments routes
+function isValidEntityRef(entityRef) {
+    return /^(line|lieu):\d+$/.test(String(entityRef || ''));
+}
+
+app.get('/api/comments/:entityRef', (req, res) => {
+    const entityRef = req.params.entityRef;
+    if (!isValidEntityRef(entityRef)) {
+        return res.status(400).json({ error: 'Invalid entity reference' });
+    }
+
+    db.all(
+        `SELECT entity_comments.*, users.username
+         FROM entity_comments
+         LEFT JOIN users ON users.id = entity_comments.user_id
+         WHERE entity_comments.entity_ref = ? AND entity_comments.is_hidden = 0
+         ORDER BY entity_comments.created_at ASC`,
+        [entityRef],
+        (err, rows) => {
+            if (err) return res.status(500).json({ error: err.message });
+            res.json(rows);
+        }
+    );
+});
+
+app.post('/api/comments/:entityRef', authenticateToken, (req, res) => {
+    if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+    const entityRef = req.params.entityRef;
+    const content = String(req.body.content || '').trim();
+
+    if (!isValidEntityRef(entityRef)) {
+        return res.status(400).json({ error: 'Invalid entity reference' });
+    }
+    if (!content) {
+        return res.status(400).json({ error: 'Empty content' });
+    }
+
+    db.run(
+        `INSERT INTO entity_comments (entity_ref, content, user_id) VALUES (?, ?, ?)`,
+        [entityRef, content, req.user.id],
+        function(err) {
+            if (err) return res.status(500).json({ error: err.message });
+            res.json({ id: this.lastID, success: true });
+        }
+    );
+});
+
+app.put('/api/comments/:id', authenticateToken, (req, res) => {
+    if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+    const content = String(req.body.content || '').trim();
+    if (!content) {
+        return res.status(400).json({ error: 'Empty content' });
+    }
+
+    if (req.user.username === 'admin') {
+        db.run(`UPDATE entity_comments SET content = ? WHERE id = ? AND is_hidden = 0`, [content, req.params.id], function(err) {
+            if (err) return res.status(500).json({ error: err.message });
+            res.json({ success: this.changes > 0 });
+        });
+    } else {
+        db.run(`UPDATE entity_comments SET content = ? WHERE id = ? AND user_id = ? AND is_hidden = 0`, [content, req.params.id, req.user.id], function(err) {
+            if (err) return res.status(500).json({ error: err.message });
+            res.json({ success: this.changes > 0 });
+        });
+    }
+});
+
+app.delete('/api/comments/:id', authenticateToken, (req, res) => {
+    if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+
+    if (req.user.username === 'admin') {
+        db.run(`UPDATE entity_comments SET is_hidden = 1 WHERE id = ?`, [req.params.id], function(err) {
+            if (err) return res.status(500).json({ error: err.message });
+            res.json({ success: this.changes > 0 });
+        });
+    } else {
+        db.run(`UPDATE entity_comments SET is_hidden = 1 WHERE id = ? AND user_id = ?`, [req.params.id, req.user.id], function(err) {
+            if (err) return res.status(500).json({ error: err.message });
+            res.json({ success: this.changes > 0 });
+        });
+    }
 });
 
 app.listen(PORT, () => {
