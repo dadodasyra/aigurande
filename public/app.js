@@ -20,6 +20,17 @@ let drawnLayers = {}; // Store layers by ID
 let linesByData = []; // Array of { layer: featureGroup, data: { id, type, ... } }
 let hiddenCategories = new Set();
 let isParcelsHidden = false;
+//currently as 08/04/2026 it's 232 247m² so 23,22ha sur 30 parcelles
+const highlightedParcelSuffixes = new Set(['C0516', 'C0519', 'C0517', 'C0533', 'C0713', 'C0714', 'C0722', 'C0720', 'C0725', 'C0958', 'C0959', 'C0960', 'C0961', 'C0727', 'C0732']);
+
+function isHighlightedParcelId(parcelId) {
+    if (!parcelId) return false;
+    const id = String(parcelId);
+    for (const suffix of highlightedParcelSuffixes) {
+        if (id.endsWith(suffix)) return true;
+    }
+    return false;
+}
 
 function formatTime(dateStr) {
     if (!dateStr) return '';
@@ -86,11 +97,13 @@ function initMap() {
         .then(data => {
             geojsonLayer = L.geoJSON(data, {
                 style: function (feature) {
+                    const isHighlighted = isHighlightedParcelId(feature?.properties?.id);
                     return {
-                        color: "#3388ff",
-                        weight: 1,
-                        opacity: 0.8,
-                        fillOpacity: 0.1
+                        color: isHighlighted ? '#a46cff' : '#3388ff',
+                        weight: isHighlighted ? 2 : 1,
+                        opacity: 1,
+                        fillColor: isHighlighted ? '#dcc8ff' : '#3388ff',
+                        fillOpacity: isHighlighted ? 0.2 : 0.1
                     };
                 },
                 onEachFeature: onEachFeature
