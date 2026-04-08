@@ -175,8 +175,9 @@ window.onLocationFound = function(e) {
 
     userMarker = L.marker(e.latlng).bindPopup("Vous êtes à " + radius + " mètres de ce point");
     userCircle = L.circle(e.latlng, radius, {
-        color: 'red',
-        fillColor: '#f03',
+        color: 'blue',
+        opacity: 0.5,
+        fillColor: '#514ee6',
         fillOpacity: 0.15
     });
 
@@ -277,8 +278,11 @@ window.onload = () => {
     
     map.on('locationfound', onLocationFound);
     map.on('locationerror', (e) => {
-        alert("Géolocalisation refusée ou impossible: " + e.message);
+        console.warn("Géolocalisation refusée ou impossible: " + e.message);
     });
+
+    // Démarre le suivi GPS en temps réel
+    map.locate({watch: true, enableHighAccuracy: true});
 };
 
 window.addEventListener('online', () => {
@@ -289,7 +293,13 @@ window.addEventListener('online', () => {
 
 window.locateUser = function(e) {
     if (e) e.preventDefault();
-    map.locate({setView: true, maxZoom: 18});
+    if (userMarker) {
+        // Si on a déjà la position, on se centre dessus en douceur
+        map.flyTo(userMarker.getLatLng(), 18);
+    } else {
+        // Sinon on force la localisation
+        map.locate({setView: true, maxZoom: 18});
+    }
 }
 
 window.recenterMap = function(e) {
