@@ -40,14 +40,14 @@ function clientLog(msg) {
 function initMap() {
     clientLog('Initializing Map');
     // 46°27'10.2"N 1°51'36.4"E -> 46.4528333, 1.8601111
-    
+
     const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 21, maxNativeZoom: 19, attribution: '© OpenStreetMap contributors' });
     const ign = L.tileLayer('https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2&STYLE=normal&FORMAT=image/png&TILEMATRIXSET=PM&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}', { maxZoom: 21, maxNativeZoom: 19, attribution: '© IGN' });
     const sat1 = L.tileLayer('https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=ORTHOIMAGERY.ORTHOPHOTOS&STYLE=normal&FORMAT=image/jpeg&TILEMATRIXSET=PM&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}', { maxZoom: 21, maxNativeZoom: 19, attribution: '© IGN' });
     const sat2 = L.tileLayer('https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 21, maxNativeZoom: 19, attribution: 'Tiles © Esri' });
 
-    map = L.map('map', { 
-        zoomControl: false, 
+    map = L.map('map', {
+        zoomControl: false,
         attributionControl: false,
         maxZoom: 21,
         layers: [osm] // Couche par défaut
@@ -75,7 +75,7 @@ function initMap() {
 
     // Add Center Marker
     L.marker([46.4528333, 1.8601111]).addTo(map)
-     .bindPopup("Grange");
+        .bindPopup("Grange");
 
     // Zoom control top left
     L.control.zoom({ position: 'topleft' }).addTo(map);
@@ -145,7 +145,7 @@ function openPanel(feature) {
 
     // Load notes
     loadNotes(currentParcelId);
-    
+
     document.getElementById('panel').classList.add('open');
     updateAuthUI();
 }
@@ -275,22 +275,22 @@ let startTime = 0;
 const panelElement = document.getElementById('panel');
 const handleElement = document.getElementById('panel-handle');
 
-function startResize(e) { 
-    isResizing = true; 
+function startResize(e) {
+    isResizing = true;
     startY = e.touches ? e.touches[0].clientY : e.clientY;
     startTime = Date.now();
     document.body.classList.add('no-select'); // Empêche la sélection de texte
     clientLog('Started resizing panel');
 }
-function stopResize() { 
-    isResizing = false; 
+function stopResize() {
+    isResizing = false;
     document.body.classList.remove('no-select'); // Restaure la sélection de texte
 }
 
 function resizePanel(clientY) {
     if (!isResizing) return;
     const newHeight = window.innerHeight - clientY;
-    
+
     // Pour fermer, il faut vraiment descendre le panneau très bas (moins de 30% de l'écran)
     if (newHeight < window.innerHeight * 0.3) {
         isResizing = false;
@@ -315,7 +315,7 @@ window.onload = () => {
     initMap();
     updateAuthUI();
     syncOfflineNotes(); // Force synchronisation au chargement de la page
-    
+
     map.on('locationfound', onLocationFound);
     map.on('locationerror', (e) => {
         console.warn("Géolocalisation refusée ou impossible: " + e.message);
