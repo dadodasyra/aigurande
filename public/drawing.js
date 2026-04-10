@@ -78,6 +78,7 @@ function toggleDrawMode() {
     if (isDrawMode) {
         overlay.classList.remove('hidden');
         drawBtn.classList.add('active-mode');
+        cancelLieuMode();
         closePanel(); // Close parcel panel to avoid confusion
         updateModeIndicator();
     } else {
@@ -86,12 +87,32 @@ function toggleDrawMode() {
 }
 
 function cancelDraw() {
+    if (currentLineCoords.length > 0 || editingLineData) {
+        customConfirm("Êtes-vous sûr de vouloir annuler le tracé en cours ? Les modifications seront perdues.", () => {
+            executeCancelDraw();
+        });
+    } else {
+        executeCancelDraw();
+    }
+}
+
+function executeCancelDraw() {
     isDrawMode = false;
     document.getElementById('draw-overlay').classList.add('hidden');
     document.getElementById('draw-btn').classList.remove('active-mode');
     if (currentLineLayer) {
         map.removeLayer(currentLineLayer);
     }
+
+    // Rétablir la ligne d'origine si on était en édition
+    if (editingLineData) {
+        if (drawnLayers[editingLineData.id] && !map.hasLayer(drawnLayers[editingLineData.id])) {
+            map.addLayer(drawnLayers[editingLineData.id]);
+            upsertLineLocally(editingLineData); // Force réaffichage visuel correct
+        }
+        editingLineData = null;
+    }
+
     currentLineLayer = null;
     currentLineCoords = [];
     redoStack = [];
@@ -141,6 +162,19 @@ function updateModeIndicator() {
     indicator.style.display = 'none';
     indicator.innerText = '';
 }
+
+document.addEventListener('keydown', function(e) {
+    if (isDrawMode) {
+        if (e.key === 'Escape') {
+            cancelDraw();
+        } else if (e.key === 'Enter') {
+            e.preventDefault();
+            if (typeof saveLine === 'function') {
+                saveLine();
+            }
+        }
+    }
+});
 
 let isDrawCollapsed = false;
 window.toggleDrawCollapse = function() {
@@ -226,27 +260,21 @@ window.toggleCategory = function(type, isVisible) {
 
 window.deleteCategory = function(type) {
     customConfirm(`Êtes-vous sûr de vouloir supprimer TOUTES les données de la catégorie "${type}" ?`, () => {
-        if (type === 'Lieux-dits') {
-            fetch(`/api/lieux/category/all`, {
+        if (type.startsWith('Lieux-dits')) {
+            let idsToDelete = linesByData.filter(i => i.data.type === type).map(i => i.data.lieuData.id);
+            Promise.all(idsToDelete.map(id => fetch(`/api/lieux/${id}`, {
                 method: 'DELETE',
                 headers: { 'Authorization': 'Bearer ' + token }
-            })
-            .then(res => res.json())
-            .then(data => {
-                if (data.success) {
-                    let idsToDelete = linesByData.filter(i => i.data.type === type).map(i => i.data.lieuData.id);
-                    idsToDelete.forEach(id => {
-                        if(lieuxDitsLayers[id]) {
-                            map.removeLayer(lieuxDitsLayers[id]);
-                            delete lieuxDitsLayers[id];
-                        }
-                    });
-                    linesByData = linesByData.filter(i => i.data.type !== type);
-                    renderLegend();
-                } else {
-                    alert("Erreur: " + data.error);
-                }
-            });
+            }))).then(() => {
+                idsToDelete.forEach(id => {
+                    if(lieuxDitsLayers[id]) {
+                        map.removeLayer(lieuxDitsLayers[id]);
+                        delete lieuxDitsLayers[id];
+                    }
+                });
+                linesByData = linesByData.filter(i => i.data.type !== type);
+                renderLegend();
+            }).catch(err => alert("Erreur lors de la suppression."));
         } else {
             fetch(`/api/lines/category/${encodeURIComponent(type)}`, {
                 method: 'DELETE',
@@ -297,8 +325,11 @@ window.renderLegend = function() {
         let isTypeHidden = hiddenCategories.has(type);
 
         let prefix = '';
-        if (type === 'Lieux-dits') {
-            prefix = `<span style="display:inline-block; font-size:16px; margin-right:5px;">📌</span>`;
+        let label = type;
+        if (type.startsWith('Lieux-dits')) {
+            let iconOnly = type.replace('Lieux-dits ', '');
+            prefix = `<span style="display:inline-block; font-size:16px; margin-right:5px;">${iconOnly}</span>`;
+            label = 'Lieux-dits';
         } else {
             let colorExample = linesByData.find(i => i.data.type === type)?.data.color || '#000';
             prefix = `<span style="display:inline-block; width:12px; height:3px; background-color:${colorExample}; margin-right:5px;"></span>`;
@@ -308,7 +339,7 @@ window.renderLegend = function() {
             <div class="legend-item">
                 <label style="flex:1;">
                     <input type="checkbox" onchange="toggleCategory('${type}', this.checked)" ${!isTypeHidden ? 'checked' : ''}>
-                    ${prefix}${type}
+                    ${prefix}${label}
                 </label>
         `;
         if (token && currentUser) {
@@ -495,12 +526,25 @@ function saveLine() {
     let lineDataObj = {
         color: currentDrawColor,
         type: currentDrawType,
-        coordinates: currentLineCoords, // Send as array, backend stringifies it if needed
+        coordinates: currentLineCoords,
         distance: totalDistance
     };
 
     if (!navigator.onLine) {
         clientLog("Ligne sauvegardée hors ligne.");
+
+        if (editingLineData) {
+            // Suppression hors ligne de l'ancienne
+            if (String(editingLineData.id).startsWith('offline_')) {
+                offlineLinesQueue = offlineLinesQueue.filter(i => String(i.id) !== String(editingLineData.id));
+            } else {
+                // TODO: Offline deletion of online element is complex, we just discard the old one locally.
+                // It would reappear on reload, but this is a lightweight offline fix.
+            }
+            removeLineLocally(editingLineData.id);
+            editingLineData = null;
+        }
+
         let tempId = 'offline_' + Date.now();
         lineDataObj.id = tempId;
         lineDataObj.username = currentUser;
@@ -510,47 +554,66 @@ function saveLine() {
         localStorage.setItem('offlineLines', JSON.stringify(offlineLinesQueue));
 
         window.renderLineLocally(lineDataObj);
-        cancelDraw();
+        executeCancelDraw();
         return;
     }
 
-    fetch('/api/lines', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer ' + token
-        },
-        body: JSON.stringify({
-            color: currentDrawColor,
-            type: currentDrawType,
-            coordinates: currentLineCoords,
-            distance: totalDistance
+    let savePromise;
+
+    if (editingLineData) {
+        // En édition: supprimer d'abord l'ancienne
+        let oldId = editingLineData.id;
+        if (String(oldId).startsWith('offline_')) {
+            offlineLinesQueue = offlineLinesQueue.filter(i => String(i.id) !== String(oldId));
+            localStorage.setItem('offlineLines', JSON.stringify(offlineLinesQueue));
+            removeLineLocally(oldId);
+            savePromise = Promise.resolve();
+        } else {
+            savePromise = fetch(`/api/lines/${oldId}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': 'Bearer ' + token }
+            }).then(() => {
+                removeLineLocally(oldId);
+            });
+        }
+    } else {
+        savePromise = Promise.resolve();
+    }
+
+    savePromise.then(() => {
+        fetch('/api/lines', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer ' + token
+            },
+            body: JSON.stringify(lineDataObj)
         })
-    })
-    .then(res => {
-        if (!res.ok) throw new Error("Could not save line");
-        return res.json();
-    })
-    .then(data => {
-        clientLog(`Line saved with ID ${data.id}`);
-        // Render it permanently via FeatureGroup to increase click area
-        let group = L.featureGroup().addTo(map);
-        // Invisible thick layer for hit detection
-        L.polyline(currentLineCoords, {weight: 20, opacity: 0}).addTo(group);
-        // Visible thin layer
-        L.polyline(currentLineCoords, {color: currentDrawColor, weight: 3}).addTo(group);
+        .then(res => {
+            if (!res.ok) throw new Error("Could not save line");
+            return res.json();
+        })
+        .then(data => {
+            clientLog(`Line saved with ID ${data.id}`);
+            let group = L.featureGroup().addTo(map);
+            L.polyline(currentLineCoords, {weight: 20, opacity: 0}).addTo(group);
+            L.polyline(currentLineCoords, {color: currentDrawColor, weight: 3}).addTo(group);
 
-        let newData = { id: data.id, distance: totalDistance, type: currentDrawType, username: currentUser, created_at: new Date(), coords: currentLineCoords, color: currentDrawColor };
-        bindLinePopup(group, newData);
+            let newData = { id: data.id, distance: totalDistance, type: currentDrawType, username: currentUser, created_at: new Date(), coords: currentLineCoords, color: currentDrawColor };
+            bindLinePopup(group, newData);
 
-        drawnLayers[data.id] = group;
-        linesByData.push({ layer: group, data: newData });
-        renderLegend();
-        updateVisibility();
-        cancelDraw();
-    })
-    .catch(err => {
-        alert("Erreur de sauvegarde réseau: " + err.message);
+            drawnLayers[data.id] = group;
+            linesByData.push({ layer: group, data: newData });
+            renderLegend();
+            updateVisibility();
+            editingLineData = null;
+            executeCancelDraw();
+        })
+        .catch(err => {
+            alert("Erreur de sauvegarde réseau: " + err.message);
+            editingLineData = null;
+            executeCancelDraw();
+        });
     });
 }
 
@@ -567,7 +630,7 @@ window.renderLineLocally = function(lineData, options = {}) {
     // Visible polyline
     L.polyline(coords, {color: lineData.color, weight: 3}).addTo(group);
 
-    let popupContent = `<strong>Réseau : ${lineData.type}</strong><br>Distance : ${lineData.distance} m<br><small>Tracé par ${lineData.username || 'Inconnu'} le ${formatTime(lineData.created_at)}</small>`;
+    let popupContent = `<strong>Réseau : ${lineData.type}</strong><br>Distance : ${lineData.distance} m<br><small>Tracé par ${lineData.username || 'Inconnu'} le ${formatCommentDate(lineData.created_at)}</small>`;
     popupContent += `<br><button class="btn btn-small" style="margin-top:5px; margin-right:5px;" onclick="openCommentsModal('line','${lineData.id}','Ligne #${lineData.id}')">💬 Commentaires</button>`;
 
     if (String(lineData.id).startsWith('offline_')) {
@@ -581,6 +644,7 @@ window.renderLineLocally = function(lineData, options = {}) {
 
     // Centered popup hack instead of bindPopup
     group.on('click', function(e) {
+        if (isDrawMode || isLieuMode) return;
         L.popup()
           .setLatLng(e.latlng)
           .setContent(popupContent)
@@ -746,7 +810,8 @@ function renderLieuDit(lieu) {
 
     lieuxDitsLayers[lieu.id] = marker;
 
-    let fakeData = { id: 'lieu_'+lieu.id, type: 'Lieux-dits', color: '#ffb300', isLieu: true, lieuData: lieu };
+    let typeStr = 'Lieux-dits ' + iconChar;
+    let fakeData = { id: 'lieu_'+lieu.id, type: typeStr, color: '#ffb300', isLieu: true, lieuData: lieu };
     linesByData.push({ layer: marker, data: fakeData });
     renderLegend();
     updateVisibility();
@@ -754,7 +819,7 @@ function renderLieuDit(lieu) {
 
 function bindLieuPopup(marker, lieu) {
     let iconChar = lieu.icon || '📌';
-    let popupContent = `<strong>${iconChar} ${lieu.title}</strong><br><em>${lieu.description || ''}</em><br><small>Ajouté par ${lieu.username || 'Inconnu'} le ${formatTime(lieu.created_at)}</small>`;
+    let popupContent = `<strong>${iconChar} ${lieu.title}</strong><br><em>${lieu.description || ''}</em><br><small>Ajouté par ${lieu.username || 'Inconnu'} le ${formatCommentDate(lieu.created_at)}</small>`;
     popupContent += `<br><button class="btn btn-small" style="margin-top:5px; margin-right:5px;" onclick="openCommentsModal('lieu','${lieu.id}','Lieu-dit #${lieu.id}')">💬 Commentaires</button>`;
 
     if (token && (currentUser === 'admin' || currentUser === lieu.username)) {
@@ -762,7 +827,13 @@ function bindLieuPopup(marker, lieu) {
         popupContent += `<button class="btn btn-small" style="background:#ffcccc; color:red; margin-top:5px; text-decoration:none;" onclick="deleteLieuDit('${lieu.id}')">🗑️ Supprimer</button>`;
     }
 
-    marker.bindPopup(popupContent);
+    marker.on('click', function(e) {
+        if (isDrawMode || isLieuMode) return;
+        L.popup()
+          .setLatLng(e.latlng)
+          .setContent(popupContent)
+          .openOn(map);
+    });
 }
 
 function saveLieuDit(title, description, icon, lat, lng) {
@@ -850,6 +921,8 @@ window.editLine = function(lineId) {
     const owner = lineData.username;
     if (!token || !(currentUser === 'admin' || currentUser === owner)) return;
 
+    editingLineData = lineData;
+
     const coords = typeof lineData.coordinates === 'string'
         ? JSON.parse(lineData.coordinates)
         : (lineData.coordinates || lineData.coords || []);
@@ -879,21 +952,11 @@ window.editLine = function(lineId) {
     updateDrawColor();
     redrawCurrentLine();
 
-    if (String(lineData.id).startsWith('offline_')) {
-        offlineLinesQueue = offlineLinesQueue.filter(i => String(i.id) !== String(lineData.id));
-        localStorage.setItem('offlineLines', JSON.stringify(offlineLinesQueue));
-        removeLineLocally(lineData.id);
-        map.closePopup();
-        return;
+    // Masquer visuellement l'ancienne ligne pendant l'édition
+    if (drawnLayers[lineData.id]) {
+        map.removeLayer(drawnLayers[lineData.id]);
     }
-
-    fetch(`/api/lines/${lineData.id}`, {
-        method: 'DELETE',
-        headers: { 'Authorization': 'Bearer ' + token }
-    }).then(() => {
-        removeLineLocally(lineData.id);
-        map.closePopup();
-    });
+    map.closePopup();
 }
 
 window.deleteLine = function(lineId) {
@@ -919,7 +982,7 @@ window.deleteLine = function(lineId) {
 }
 
 function bindLinePopup(layer, lineData) {
-    let popupContent = `<strong>Réseau : ${lineData.type}</strong><br>Distance : ${lineData.distance} m<br><small>Tracé par ${lineData.username || 'Inconnu'} le ${formatTime(lineData.created_at)}</small>`;
+    let popupContent = `<strong>Réseau : ${lineData.type}</strong><br>Distance : ${lineData.distance} m<br><small>Tracé par ${lineData.username || 'Inconnu'} le ${formatCommentDate(lineData.created_at)}</small>`;
     popupContent += `<br><button class="btn btn-small" style="margin-top:5px; margin-right:5px;" onclick="openCommentsModal('line','${lineData.id}','Ligne #${lineData.id}')">💬 Commentaires</button>`;
 
     if (token && (currentUser === 'admin' || currentUser === lineData.username)) {
@@ -928,6 +991,7 @@ function bindLinePopup(layer, lineData) {
     }
 
     layer.on('click', function(e) {
+        if (isDrawMode || isLieuMode) return;
         L.popup()
           .setLatLng(e.latlng)
           .setContent(popupContent)

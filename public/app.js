@@ -64,8 +64,8 @@ function formatCommentDate(dateStr) {
     };
 
     const diffDays = Math.round((toUtcDay(todayKey) - toUtcDay(targetKey)) / 86400000);
-    if (diffDays === 0) return formatTime(d);
-    if (diffDays === 1) return `Hier ${formatTime(d)}`;
+    if (diffDays === 0) return `${formatTime(d)}`;
+    if (diffDays === 1) return `hier à ${formatTime(d)}`;
 
     const dateLabel = d.toLocaleDateString('fr-FR', {
         timeZone: 'Europe/Paris',
@@ -177,8 +177,10 @@ function openPanel(feature) {
     document.getElementById('panel-title').innerText = `Parcelle ${shortId}`;
 
     // Display properties
-    const created = feature.properties.created || 'N/A';
-    const updated = feature.properties.updated || 'N/A';
+    const createdRaw = feature.properties.created;
+    const created = createdRaw ? formatCommentDate(createdRaw) : 'N/A';
+    const updatedRaw = feature.properties.updated;
+    const updated = updatedRaw ? formatCommentDate(updatedRaw) : 'N/A';
     const contenance = Number(feature.properties.contenance);
     const hasSurface = Number.isFinite(contenance);
     const surfaceM2 = hasSurface ? `${contenance.toLocaleString('fr-FR')} m²` : 'N/A';
@@ -301,8 +303,31 @@ window.customDualPrompt = function(message, defaultVal1, defaultVal2, callback) 
 window.customLieuPrompt = function(message, defaultTitle, defaultIcon, defaultDesc, callback) {
     document.getElementById('lieu-prompt-title').innerText = message;
     document.getElementById('lieu-prompt-title-input').value = defaultTitle || '';
-    document.getElementById('lieu-prompt-icon-input').value = defaultIcon || '📌';
+    
+    const iconSelect = document.getElementById('lieu-prompt-icon-input');
+    const customIcon = document.getElementById('lieu-prompt-custom-icon');
+    
+    // Check if defaultIcon is among standard options
+    let found = false;
+    for (let opt of iconSelect.options) {
+        if (opt.value === defaultIcon) {
+            found = true;
+            break;
+        }
+    }
+    
+    if (found || !defaultIcon) {
+        iconSelect.value = defaultIcon || '📌';
+        customIcon.style.display = 'none';
+        customIcon.value = '';
+    } else {
+        iconSelect.value = 'custom';
+        customIcon.style.display = 'block';
+        customIcon.value = defaultIcon;
+    }
+    
     document.getElementById('lieu-prompt-desc-input').value = defaultDesc || '';
+    document.getElementById('lieu-prompt-error').style.display = 'none';
     document.getElementById('lieu-prompt-modal').style.display = 'block';
 
     let oldBtn = document.getElementById('lieu-prompt-ok-btn');
@@ -310,10 +335,29 @@ window.customLieuPrompt = function(message, defaultTitle, defaultIcon, defaultDe
     oldBtn.parentNode.replaceChild(newBtn, oldBtn);
 
     newBtn.onclick = function() {
+        const titleVal = document.getElementById('lieu-prompt-title-input').value.trim();
+        let iconVal = document.getElementById('lieu-prompt-icon-input').value.trim();
+        if (iconVal === 'custom') {
+            iconVal = document.getElementById('lieu-prompt-custom-icon').value.trim();
+        }
+        
+        const errEl = document.getElementById('lieu-prompt-error');
+        
+        if (!titleVal) {
+            errEl.innerText = "Le titre est obligatoire.";
+            errEl.style.display = 'block';
+            return;
+        }
+        if (!iconVal || iconVal.length > 5) {
+            errEl.innerText = "L'émoji doit être court.";
+            errEl.style.display = 'block';
+            return;
+        }
+
         document.getElementById('lieu-prompt-modal').style.display = 'none';
         callback(
-            document.getElementById('lieu-prompt-title-input').value,
-            document.getElementById('lieu-prompt-icon-input').value,
+            titleVal,
+            iconVal,
             document.getElementById('lieu-prompt-desc-input').value
         );
     };

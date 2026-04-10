@@ -12,7 +12,7 @@ function loadNotes(parcelId) {
     if(cachedPublic) {
         try {
             let data = JSON.parse(cachedPublic);
-            let dateStr = formatTime(data.updated_at);
+            let dateStr = formatCommentDate(data.updated_at);
             let authorStr = data.username ? ` par <strong>${data.username}</strong>` : '';
             publicDisplay.innerHTML = `<p style="white-space: pre-wrap; margin:0 0 10px 0; color:#555;">${data.content}</p>
                                  <small style="color: gray;">Modifié${authorStr} le ${dateStr}</small>
@@ -36,7 +36,7 @@ function loadNotes(parcelId) {
             
             if (data.content) {
                 localStorage.setItem('publicNote_' + parcelId, JSON.stringify(data));
-                let dateStr = formatTime(data.updated_at);
+                let dateStr = formatCommentDate(data.updated_at);
                 let authorStr = data.username ? ` par <strong>${data.username}</strong>` : '';
                 publicDisplay.innerHTML = `<p style="white-space: pre-wrap; margin:0 0 10px 0;">${data.content}</p>
                                      <small style="color: gray;">Modifié${authorStr} le ${dateStr}</small>`;
@@ -104,7 +104,7 @@ function displayIndividualNotes(notes, parcelId, list) {
 
         const el = document.createElement('div');
         el.className = 'note';
-        el.innerHTML = `<strong>${note.username}</strong> (${formatTime(note.created_at)})${actionHTML}: <br> <span id="note-text-${note.id}">${note.content}</span>`;
+        el.innerHTML = `<strong>${note.username}</strong> (${formatCommentDate(note.created_at)})${actionHTML}: <br> <span id="note-text-${note.id}">${note.content}</span>`;
         list.appendChild(el);
     });
 
