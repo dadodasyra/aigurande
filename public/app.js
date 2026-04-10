@@ -7,6 +7,8 @@ let currentUser = localStorage.getItem('username') || null;
 // Initialization array for offline Notes
 let offlineNotesQueue = JSON.parse(localStorage.getItem('offlineNotes') || '[]');
 
+let layersControl;
+
 // Draw Mode Variables
 let isDrawMode = false;
 let currentLineCoords = [];
@@ -15,6 +17,7 @@ let currentLineLayer = null;
 let currentDrawColor = 'red';
 let currentDrawType = 'Électricité';
 let drawnLayers = {}; // Store layers by ID
+let editingLineData = null;
 
 // Legend management Data
 let linesByData = []; // Array of { layer: featureGroup, data: { id, type, ... } }
@@ -106,10 +109,18 @@ function initMap() {
         "Satellite 2": sat2
     };
     const isMobileViewport = window.innerWidth <= 768;
-    const layersControl = L.control.layers(baseMaps, null, { position: 'bottomleft' }).addTo(map);
+    layersControl = L.control.layers(baseMaps, null, { position: 'bottomleft' }).addTo(map);
     if (isMobileViewport && layersControl && layersControl.getContainer) {
         layersControl.getContainer().classList.add('layers-control-mobile');
     }
+
+    // Fermeture croisée Légende / Layers
+    layersControl.getContainer().addEventListener('mouseenter', () => {
+        if (typeof isLegendOpen !== 'undefined' && isLegendOpen) window.toggleLegend();
+    });
+    layersControl.getContainer().addEventListener('click', () => {
+        if (typeof isLegendOpen !== 'undefined' && isLegendOpen) window.toggleLegend();
+    });
 
     // Custom Legend Control Button
     const LegendControl = L.Control.extend({

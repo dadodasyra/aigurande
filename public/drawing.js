@@ -80,7 +80,6 @@ function toggleDrawMode() {
         drawBtn.classList.add('active-mode');
         cancelLieuMode();
         closePanel(); // Close parcel panel to avoid confusion
-        updateModeIndicator();
     } else {
         cancelDraw();
     }
@@ -117,7 +116,6 @@ function executeCancelDraw() {
     currentLineCoords = [];
     redoStack = [];
     document.getElementById('draw-distance').innerText = '0';
-    updateModeIndicator();
 }
 
 let isLieuMode = false;
@@ -131,7 +129,6 @@ window.toggleLieuMode = function() {
         lieuBtn.classList.add('active-mode');
         cancelDraw();
         closePanel();
-        updateModeIndicator();
     } else {
         cancelLieuMode();
     }
@@ -141,26 +138,6 @@ window.cancelLieuMode = function() {
     isLieuMode = false;
     const lieuBtn = document.getElementById('lieu-btn');
     if (lieuBtn) lieuBtn.classList.remove('active-mode');
-    updateModeIndicator();
-}
-
-function updateModeIndicator() {
-    const indicator = document.getElementById('mode-indicator');
-    if (!indicator) return;
-
-    if (isLieuMode) {
-        indicator.innerText = '📌 Mode lieu-dit actif';
-        indicator.style.display = 'inline-block';
-        return;
-    }
-    if (isDrawMode) {
-        indicator.innerText = '✏️ Mode tracé actif';
-        indicator.style.display = 'inline-block';
-        return;
-    }
-
-    indicator.style.display = 'none';
-    indicator.innerText = '';
 }
 
 document.addEventListener('keydown', function(e) {
@@ -194,6 +171,10 @@ window.toggleLegend = function(e) {
     isLegendOpen = !isLegendOpen;
     const overlay = document.getElementById('legend-overlay');
     if (isLegendOpen) {
+        // Fermer le conteneur des calques s'il est ouvert pour éviter la superposition
+        if (typeof layersControl !== 'undefined' && layersControl) {
+            layersControl.collapse();
+        }
         overlay.classList.remove('hidden');
         renderLegend();
     } else {
@@ -208,10 +189,13 @@ window.toggleCatalog = function(e) {
     }
     isCatalogOpen = !isCatalogOpen;
     const overlay = document.getElementById('catalog-overlay');
+    const btn = document.getElementById('catalog-btn');
     if (isCatalogOpen) {
+        if (btn) btn.classList.add('active-mode');
         overlay.classList.remove('hidden');
         renderCatalog();
     } else {
+        if (btn) btn.classList.remove('active-mode');
         overlay.classList.add('hidden');
     }
 }
