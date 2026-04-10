@@ -908,6 +908,7 @@ window.deleteLieuDit = function(lieuId) {
                 }
                 linesByData = linesByData.filter(i => !(i.data.isLieu && String(i.data.lieuData.id) === String(lieuId)));
                 renderLegend();
+                map.closePopup();
             }
         });
     });
