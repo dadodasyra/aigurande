@@ -42,6 +42,40 @@ function formatTime(dateStr) {
     return d.toLocaleTimeString('fr-FR', { timeZone: 'Europe/Paris', hour: '2-digit', minute: '2-digit' });
 }
 
+function formatCommentDate(dateStr) {
+    if (!dateStr) return '';
+    const d = (typeof dateStr === 'object' || typeof dateStr === 'number')
+        ? new Date(dateStr)
+        : (String(dateStr).endsWith('Z') ? new Date(dateStr) : new Date(dateStr + 'Z'));
+
+    const dayKeyFormatter = new Intl.DateTimeFormat('fr-CA', {
+        timeZone: 'Europe/Paris',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+    });
+
+    const todayKey = dayKeyFormatter.format(new Date());
+    const targetKey = dayKeyFormatter.format(d);
+
+    const toUtcDay = (key) => {
+        const [year, month, day] = key.split('-').map(Number);
+        return Date.UTC(year, month - 1, day);
+    };
+
+    const diffDays = Math.round((toUtcDay(todayKey) - toUtcDay(targetKey)) / 86400000);
+    if (diffDays === 0) return formatTime(d);
+    if (diffDays === 1) return `Hier ${formatTime(d)}`;
+
+    const dateLabel = d.toLocaleDateString('fr-FR', {
+        timeZone: 'Europe/Paris',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+    });
+    return `${dateLabel} ${formatTime(d)}`;
+}
+
 // Add a simple client-side logger
 function clientLog(msg) {
     console.log(`${new Date().toLocaleTimeString('fr-FR', { timeZone: 'Europe/Paris' })} - ${msg}`);
@@ -72,7 +106,7 @@ function initMap() {
         "Satellite 2": sat2
     };
     const isMobileViewport = window.innerWidth <= 768;
-    const layersControl = L.control.layers(baseMaps, null, { position: isMobileViewport ? 'topleft' : 'bottomleft' }).addTo(map);
+    const layersControl = L.control.layers(baseMaps, null, { position: 'bottomleft' }).addTo(map);
     if (isMobileViewport && layersControl && layersControl.getContainer) {
         layersControl.getContainer().classList.add('layers-control-mobile');
     }
@@ -188,6 +222,13 @@ let userPosition = null;
 let userMarker;
 let userCircle;
 let isPositionHidden = false;
+const userPositionIcon = L.divIcon({
+    className: 'user-position-icon',
+    html: "<div style='width:16px;height:16px;border-radius:50%;background:#0b5fff;border:2px solid #fff;box-shadow:0 0 0 2px rgba(11,95,255,0.35);'></div>",
+    iconSize: [16, 16],
+    iconAnchor: [8, 8],
+    popupAnchor: [0, -10]
+});
 
 window.onLocationFound = function(e) {
     var radius = e.accuracy / 2;
@@ -199,7 +240,7 @@ window.onLocationFound = function(e) {
         map.removeLayer(userCircle);
     }
 
-    userMarker = L.marker(e.latlng).bindPopup("Vous êtes à " + radius + " mètres de ce point");
+    userMarker = L.marker(e.latlng, { icon: userPositionIcon }).bindPopup("Vous êtes à " + radius + " mètres de ce point");
     userCircle = L.circle(e.latlng, radius, {
         color: 'blue',
         opacity: 0.5,
@@ -414,7 +455,7 @@ function loadComments(entityRef) {
                 html += `<div style="background:#fff; border:1px solid #eee; border-radius:6px; padding:8px; margin-bottom:6px;">`;
                 html += `<div style="font-size:13px; margin-bottom:4px;">${renderedContent}</div>`;
                 html += `<div style="display:flex; justify-content:space-between; align-items:center; font-size:11px; color:#666;">`;
-                html += `<span>${item.username || 'Inconnu'} - ${formatTime(item.created_at)}</span>`;
+                html += `<span>${item.username || 'Inconnu'} - ${formatCommentDate(item.created_at)}</span>`;
                 if (token && (currentUser === 'admin' || currentUser === item.username)) {
                     const safeContent = String(item.content || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n');
                     html += `<div style="display:flex; gap:4px;">`;

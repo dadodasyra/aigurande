@@ -77,8 +77,9 @@ function toggleDrawMode() {
 
     if (isDrawMode) {
         overlay.classList.remove('hidden');
-        drawBtn.style.backgroundColor = 'rgba(0, 120, 212, 0.2)';
+        drawBtn.classList.add('active-mode');
         closePanel(); // Close parcel panel to avoid confusion
+        updateModeIndicator();
     } else {
         cancelDraw();
     }
@@ -87,7 +88,7 @@ function toggleDrawMode() {
 function cancelDraw() {
     isDrawMode = false;
     document.getElementById('draw-overlay').classList.add('hidden');
-    document.getElementById('draw-btn').style.backgroundColor = 'transparent';
+    document.getElementById('draw-btn').classList.remove('active-mode');
     if (currentLineLayer) {
         map.removeLayer(currentLineLayer);
     }
@@ -95,6 +96,7 @@ function cancelDraw() {
     currentLineCoords = [];
     redoStack = [];
     document.getElementById('draw-distance').innerText = '0';
+    updateModeIndicator();
 }
 
 let isLieuMode = false;
@@ -105,9 +107,10 @@ window.toggleLieuMode = function() {
     const lieuBtn = document.getElementById('lieu-btn');
 
     if (isLieuMode) {
-        lieuBtn.style.backgroundColor = 'rgba(0, 120, 212, 0.2)';
+        lieuBtn.classList.add('active-mode');
         cancelDraw();
         closePanel();
+        updateModeIndicator();
     } else {
         cancelLieuMode();
     }
@@ -116,7 +119,27 @@ window.toggleLieuMode = function() {
 window.cancelLieuMode = function() {
     isLieuMode = false;
     const lieuBtn = document.getElementById('lieu-btn');
-    if (lieuBtn) lieuBtn.style.backgroundColor = 'transparent';
+    if (lieuBtn) lieuBtn.classList.remove('active-mode');
+    updateModeIndicator();
+}
+
+function updateModeIndicator() {
+    const indicator = document.getElementById('mode-indicator');
+    if (!indicator) return;
+
+    if (isLieuMode) {
+        indicator.innerText = '📌 Mode lieu-dit actif';
+        indicator.style.display = 'inline-block';
+        return;
+    }
+    if (isDrawMode) {
+        indicator.innerText = '✏️ Mode tracé actif';
+        indicator.style.display = 'inline-block';
+        return;
+    }
+
+    indicator.style.display = 'none';
+    indicator.innerText = '';
 }
 
 let isDrawCollapsed = false;
