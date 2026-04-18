@@ -1101,10 +1101,10 @@ function renderLieuDit(lieu) {
     let iconChar = lieu.icon || '📌';
     let lieuIcon = L.divIcon({
         className: 'custom-div-icon',
-        html: `<div style='font-size: 24px; text-shadow: 1px 1px 2px #fff;'>${iconChar}</div>`,
-        iconSize: [30, 42],
-        iconAnchor: [15, 42],
-        popupAnchor: [0, -32]
+        html: `<div style='display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; font-size: 24px; text-shadow: 1px 1px 2px #fff; margin: 0; padding: 0;'>${iconChar}</div>`,
+        iconSize: [32, 32],
+        iconAnchor: [16, 16],
+        popupAnchor: [0, -16]
     });
 
     let marker = L.marker([lieu.lat, lieu.lng], { icon: lieuIcon }).addTo(map);
@@ -1132,7 +1132,8 @@ function bindLieuPopup(marker, lieu) {
 
     marker.on('click', function(e) {
         if (isDrawMode || isLieuMode || isSurfaceMode) {
-            if (typeof onMapClick === 'function') onMapClick({latlng: e.latlng});
+            let targetLatLng = marker.getLatLng ? marker.getLatLng() : e.latlng;
+            if (typeof onMapClick === 'function') onMapClick({latlng: targetLatLng});
             return;
         }
         L.popup()
@@ -1367,7 +1368,7 @@ window.renderSurfaceLocally = function(surfaceData, options = {}) {
 
     let labelIcon = L.divIcon({
         className: 'surface-label-icon',
-        html: `<div style="position:absolute; left:0; top:0; transform: translate(-50%, -50%); pointer-events:none;"><div style="transform: rotate(${angle}deg) scale(var(--map-zoom-scale, 1)); transform-origin: center center; color: ${surfaceData.color || 'red'}; opacity: 0.8; font-weight: bold; text-shadow: 1px 1px 0px rgba(255,255,255,0.7), -1px -1px 0px rgba(255,255,255,0.7), 1px -1px 0px rgba(255,255,255,0.7), -1px 1px 0px rgba(255,255,255,0.7); font-size: 16px; filter: brightness(0.6); pointer-events: none; white-space: nowrap;">${title}</div></div>`,
+        html: `<div style="position:absolute; left:0; top:0; transform: translate(-50%, -50%); pointer-events:none;"><div style="transition: transform 0.25s cubic-bezier(0,0,0.25,1); transform: rotate(${angle}deg) scale(var(--map-zoom-scale, 1)); transform-origin: center center; color: ${surfaceData.color || 'red'}; opacity: 0.8; font-weight: bold; text-shadow: 1px 1px 0px rgba(255,255,255,0.7), -1px -1px 0px rgba(255,255,255,0.7), 1px -1px 0px rgba(255,255,255,0.7), -1px 1px 0px rgba(255,255,255,0.7); font-size: 16px; filter: brightness(0.6); pointer-events: none; white-space: nowrap;">${title}</div></div>`,
         iconSize: [0, 0]
     });
     

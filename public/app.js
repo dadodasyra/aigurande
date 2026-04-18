@@ -101,13 +101,16 @@ function initMap() {
         layers: [osm] // Couche par défaut
     }).setView([46.4528333, 1.8601111], 15);
 
-    function updateZoomScale() {
+    function updateZoomScale(e) {
         if (!map) return;
-        let zoom = map.getZoom();
+        let zoom = (e && e.zoom !== undefined) ? e.zoom : map.getZoom();
         let scale = Math.pow(2, zoom - 16);
+        // Limiter la taille maximale pour que le texte ne devienne pas énorme
+        scale = Math.min(scale, 2.5);
         document.documentElement.style.setProperty('--map-zoom-scale', scale);
     }
     map.on('zoom', updateZoomScale);
+    map.on('zoomanim', updateZoomScale);
     updateZoomScale();
 
     // Contrôle des calques
