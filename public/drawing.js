@@ -457,11 +457,25 @@ function updateVisibility() {
 window.toggleCategory = function(type, isVisible) {
     if (type === 'Parcelles') {
         isParcelsHidden = !isVisible;
+        localStorage.setItem('isParcelsHidden', isParcelsHidden ? '1' : '0');
     } else {
         if (isVisible) hiddenCategories.delete(type);
         else hiddenCategories.add(type);
+        localStorage.setItem('hiddenCategories', JSON.stringify(Array.from(hiddenCategories)));
     }
     updateVisibility();
+    renderLegend(); // update master checkboxes
+}
+
+window.toggleCategoryGroup = function(groupPrefix, typesString, isVisible) {
+    const types = typesString.split(',');
+    types.forEach(type => {
+        if (isVisible) hiddenCategories.delete(type);
+        else hiddenCategories.add(type);
+    });
+    localStorage.setItem('hiddenCategories', JSON.stringify(Array.from(hiddenCategories)));
+    updateVisibility();
+    renderLegend();
 }
 
 window.deleteCategory = function(type) {
@@ -506,11 +520,58 @@ window.deleteCategory = function(type) {
     });
 }
 
+window.copyLegendLink = function() {
+    const params = new URLSearchParams();
+    if (hiddenCategories.size > 0) {
+        params.set('hidden', Array.from(hiddenCategories).map(encodeURIComponent).join(','));
+    }
+    if (isParcelsHidden) {
+        params.set('parcels', '1');
+    }
+    const url = `${window.location.origin}${window.location.pathname}?${params.toString()}`;
+    navigator.clipboard.writeText(url).then(() => {
+        const btn = document.getElementById('share-legend-btn');
+        if(btn) {
+            btn.innerHTML = '✅';
+            setTimeout(() => { btn.innerHTML = '🔗'; }, 2000);
+        }
+    });
+};
+
+let legendExpandedGroups = {
+    'lieux': false,
+    'zones': false,
+    'lignes': false
+};
+
+window.toggleLegendGroup = function(group) {
+    legendExpandedGroups[group] = !legendExpandedGroups[group];
+    renderLegend();
+};
+
+function getCommonPrefix(strings) {
+    // If only one, return it
+    if (strings.length === 1) return strings[0];
+    if (strings.length === 0) return '';
+    // Sort strings
+    const sorted = strings.slice().sort();
+    const first = sorted[0];
+    const last = sorted[sorted.length - 1];
+    let i = 0;
+    while(i < first.length && first.charAt(i) === last.charAt(i)) i++;
+    let prefix = first.substring(0, i).trim();
+    // If prefix is too short, just return the first one or original fallback
+    return prefix.length > 2 ? prefix : '';
+}
+
 window.renderLegend = function() {
     const legendContent = document.getElementById('legend-content');
 
-    // First, user position toggle and parcels toggle
     let html = `
+        <div style="display:flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <strong style="font-size:16px;">Légende</strong>
+            <button id="share-legend-btn" class="btn icon-btn" style="font-size:16px; padding:2px; margin:0;" onclick="copyLegendLink()" title="Copier le lien avec l'état de la légende">🔗</button>
+        </div>
         <div class="legend-item">
             <label style="flex:1;">
                 <input type="checkbox" onchange="togglePosition(this.checked)" ${!(typeof isPositionHidden !== 'undefined' && isPositionHidden) ? 'checked' : ''}>
@@ -526,34 +587,81 @@ window.renderLegend = function() {
         <hr style="margin:8px 0;">
     `;
 
-    const types = [...new Set(linesByData.map(item => item.data.type))];
-    types.forEach(type => {
-        let isTypeHidden = hiddenCategories.has(type);
+    const allTypes = [...new Set(linesByData.map(item => item.data.type))];
 
-        let prefix = '';
-        let label = type;
-        if (type.startsWith('Lieux-dits')) {
-            let iconOnly = type.replace('Lieux-dits ', '');
-            prefix = `<span style="display:inline-block; font-size:16px; margin-right:5px;">${iconOnly}</span>`;
-            label = 'Lieux-dits';
-        } else if (type.startsWith('Zone: ')) {
-            let colorExample = linesByData.find(i => i.data.type === type)?.data.color || '#000';
-            prefix = `<span style="display:inline-block; width:14px; height:14px; background-color:${colorExample}; margin-right:5px; opacity:0.6; border:1px solid ${colorExample}"></span>`;
-            label = type.replace('Zone: ', '');
-        } else {
-            let colorExample = linesByData.find(i => i.data.type === type)?.data.color || '#000';
-            prefix = `<span style="display:inline-block; width:12px; height:3px; background-color:${colorExample}; margin-right:5px;"></span>`;
-        }
+    // Group types
+    const groups = {
+        'lieux': { label: 'Lieux-dits', bg: '#f0f8ff', types: [], icon: '📌' },
+        'zones': { label: 'Zones', bg: '#fff0f5', types: [], icon: '🟦' },
+        'lignes': { label: 'Lignes', bg: '#f5fffa', types: [], icon: '〰️' }
+    };
+
+    allTypes.forEach(t => {
+        if (t.startsWith('Lieux-dits')) groups.lieux.types.push(t);
+        else if (t.startsWith('Zone: ')) groups.zones.types.push(t);
+        else groups.lignes.types.push(t);
+    });
+
+    Object.keys(groups).forEach(gKey => {
+        const group = groups[gKey];
+        if (group.types.length === 0) return;
+
+        let hiddenCount = group.types.filter(t => hiddenCategories.has(t)).length;
+        let allChecked = hiddenCount === 0;
+        let isExpanded = legendExpandedGroups[gKey];
 
         html += `
-            <div class="legend-item">
-                <label style="flex:1;">
-                    <input type="checkbox" onchange="toggleCategory('${type}', this.checked)" ${!isTypeHidden ? 'checked' : ''}>
-                    ${prefix}${label}
-                </label>
+            <div style="background:${group.bg}; border-radius:6px; padding:6px; margin-bottom:6px; border:1px solid #ddd;">
+                <div style="display:flex; align-items:center; justify-content:space-between;">
+                    <label style="flex:1; font-weight:bold; margin-bottom:0;">
+                        <input type="checkbox" onchange="toggleCategoryGroup('${gKey}', '${group.types.join(',')}', this.checked)" ${allChecked ? 'checked' : ''}>
+                        ${group.icon} ${group.label}
+                    </label>
+                    <button class="btn btn-small" style="padding:2px 6px; font-size:12px; margin-left:8px;" onclick="toggleLegendGroup('${gKey}')">
+                        ${isExpanded ? '▲' : '▼'}
+                    </button>
+                </div>
         `;
-        if (token && currentUser) {
-            html += `<button class="btn icon-btn" style="color:red; font-size:12px; padding:2px;" onclick="deleteCategory('${type}')" title="Supprimer tout">🗑️</button>`;
+
+        if (isExpanded) {
+            html += `<div style="margin-top:6px; margin-left:14px; padding-left:10px; border-left:2px solid #ccc;">`;
+            group.types.forEach(type => {
+                let isTypeHidden = hiddenCategories.has(type);
+                let prefix = '';
+                let label = type;
+
+                if (type.startsWith('Lieux-dits')) {
+                    let iconOnly = type.replace('Lieux-dits ', '');
+                    prefix = `<span style="display:inline-block; font-size:16px; margin-right:5px;">${iconOnly}</span>`;
+
+                    // Extraire le nom
+                    let lieuxOfType = linesByData.filter(i => i.data.type === type && i.data.lieuData).map(i => i.data.lieuData.title || '');
+                    let commonName = getCommonPrefix(lieuxOfType);
+                    if (!commonName) commonName = 'Lieux-dits';
+                    label = commonName;
+
+                } else if (type.startsWith('Zone: ')) {
+                    let colorExample = linesByData.find(i => i.data.type === type)?.data.color || '#000';
+                    prefix = `<span style="display:inline-block; width:14px; height:14px; background-color:${colorExample}; margin-right:5px; opacity:0.6; border:1px solid ${colorExample}"></span>`;
+                    label = type.replace('Zone: ', '');
+                } else {
+                    let colorExample = linesByData.find(i => i.data.type === type)?.data.color || '#000';
+                    prefix = `<span style="display:inline-block; width:12px; height:3px; background-color:${colorExample}; margin-right:5px;"></span>`;
+                }
+
+                html += `
+                    <div class="legend-item" style="margin-bottom:4px; padding:2px 0;">
+                        <label style="flex:1;">
+                            <input type="checkbox" onchange="toggleCategory('${type}', this.checked)" ${!isTypeHidden ? 'checked' : ''}>
+                            ${prefix}${label}
+                        </label>
+                `;
+                if (token && currentUser) {
+                    html += `<button class="btn icon-btn" style="color:red; font-size:12px; padding:2px;" onclick="deleteCategory('${type}')" title="Supprimer tout">🗑️</button>`;
+                }
+                html += `</div>`;
+            });
+            html += `</div>`;
         }
         html += `</div>`;
     });

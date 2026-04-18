@@ -21,8 +21,35 @@ let editingLineData = null;
 
 // Legend management Data
 let linesByData = []; // Array of { layer: featureGroup, data: { id, type, ... } }
+
+// Parse URL for share link first, else localStorage
+let urlParams = new URLSearchParams(window.location.search);
 let hiddenCategories = new Set();
 let isParcelsHidden = false;
+
+if (urlParams.has('hidden')) {
+    let hiddenParam = urlParams.get('hidden');
+    if (hiddenParam) {
+        hiddenParam.split(',').forEach(c => hiddenCategories.add(decodeURIComponent(c)));
+    }
+    isParcelsHidden = urlParams.get('parcels') === '1';
+    
+    // Save to localStorage immediately
+    localStorage.setItem('hiddenCategories', JSON.stringify(Array.from(hiddenCategories)));
+    localStorage.setItem('isParcelsHidden', isParcelsHidden ? '1' : '0');
+    
+    // Clean URL
+    window.history.replaceState({}, document.title, window.location.pathname);
+} else {
+    try {
+        let stored = JSON.parse(localStorage.getItem('hiddenCategories'));
+        if (Array.isArray(stored)) {
+            stored.forEach(c => hiddenCategories.add(c));
+        }
+    } catch(e) {}
+    isParcelsHidden = localStorage.getItem('isParcelsHidden') === '1';
+}
+
 //currently as 08/04/2026 it's 232 247m² so 23,22ha sur 30 parcelles
 const highlightedParcelSuffixes = new Set(['C0516', 'C0519', 'C0517', 'C0533', 'C0713', 'C0714', 'C0722', 'C0720', 'C0725', 'C0958', 'C0959', 'C0960', 'C0961', 'C0727', 'C0732']);
 
