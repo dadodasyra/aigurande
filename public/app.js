@@ -101,6 +101,15 @@ function initMap() {
         layers: [osm] // Couche par défaut
     }).setView([46.4528333, 1.8601111], 15);
 
+    function updateZoomScale() {
+        if (!map) return;
+        let zoom = map.getZoom();
+        let scale = Math.pow(2, zoom - 16);
+        document.documentElement.style.setProperty('--map-zoom-scale', scale);
+    }
+    map.on('zoom', updateZoomScale);
+    updateZoomScale();
+
     // Contrôle des calques
     const baseMaps = {
         "Plan OpenStreetMap": osm,
@@ -168,18 +177,19 @@ function initMap() {
 }
 
 function onEachFeature(feature, layer) {
-    layer.on({
-        click: function(e) {
-            if (isDrawMode || isLieuMode) return; // Ne pas ouvrir le panel si on trace une ligne ou un lieu-dit
-
-            // Highlight
-            if (geojsonLayer) geojsonLayer.resetStyle();
-            layer.setStyle({ weight: 3, color: '#ff0000', fillOpacity: 0.3 });
-
-            // Open panel
-            openPanel(feature);
+    layer.on('click', function(e) {
+        if (isDrawMode || isLieuMode || (typeof isSurfaceMode !== 'undefined' && isSurfaceMode)) {
+            if (typeof onMapClick === 'function') onMapClick({latlng: e.latlng});
+            return;
         }
-    });
+
+        // Highlight
+        if (geojsonLayer) geojsonLayer.resetStyle();
+        layer.setStyle({ weight: 3, color: '#ff0000', fillOpacity: 0.3 });
+
+        // Open panel
+        openPanel(feature);
+    })
 }
 
 function openPanel(feature) {
@@ -587,6 +597,7 @@ window.onload = () => {
 window.addEventListener('online', () => {
     syncOfflineNotes();
     if (typeof syncOfflineLines === 'function') syncOfflineLines();
+    if (typeof syncOfflineSurfaces === 'function') syncOfflineSurfaces();
     clientLog("System is online. Syncing offline data...");
 });
 

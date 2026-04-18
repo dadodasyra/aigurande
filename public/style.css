@@ -40,7 +40,7 @@ body, html {
     display: none;
 }
 
-#draw-overlay {
+#draw-overlay, #surface-overlay {
     position: absolute;
     top: 50px;
     right: 10px;
@@ -53,15 +53,15 @@ body, html {
     width: 250px;
 }
 
-#draw-overlay.hidden {
+#draw-overlay.hidden, #surface-overlay.hidden {
     display: none;
 }
 
-#draw-overlay h4 {
+#draw-overlay h4, #surface-overlay h4 {
     margin-top: 0;
 }
 
-#draw-overlay select, .input-field {
+#draw-overlay select, #surface-overlay select, .input-field {
     width: 100%;
     padding: 8px;
     margin-bottom: 5px;

@@ -3,13 +3,14 @@ function updateAuthUI() {
     const info = document.getElementById('user-info');
     const adminBtn = document.getElementById('admin-btn');
 
-    if (token && currentUser) {
+    if (token) {
         btn.innerText = '🚪';
         btn.title = 'Se déconnecter';
         btn.onclick = logout;
         info.innerText = currentUser;
 
         document.getElementById('draw-btn').style.display = 'inline-flex';
+        document.getElementById('surface-btn').style.display = 'inline-flex';
         document.getElementById('lieu-btn').style.display = 'inline-flex';
 
         if (currentUser === 'admin') adminBtn.style.display = 'block';
@@ -26,9 +27,11 @@ function updateAuthUI() {
         info.innerText = '';
         adminBtn.style.display = 'none';
         document.getElementById('draw-btn').style.display = 'none';
+        document.getElementById('surface-btn').style.display = 'none';
         document.getElementById('lieu-btn').style.display = 'none';
         cancelDraw();
         if (typeof cancelLieuMode === 'function') cancelLieuMode();
+        if (typeof cancelSurface === 'function') cancelSurface();
 
         // Notes UI
         document.getElementById('add-note-section').style.display = 'none';

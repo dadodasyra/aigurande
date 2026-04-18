@@ -84,6 +84,7 @@
         <button id="catalog-btn" class="btn icon-btn-auth" onclick="toggleCatalog(event)" title="Catalogue">🗂️</button>
         <button id="lieu-btn" class="btn icon-btn-auth" onclick="toggleLieuMode()" style="display:none;" title="Ajouter un lieu-dit">📌</button>
         <button id="draw-btn" class="btn icon-btn-auth" onclick="toggleDrawMode()" style="display:none;" title="Mode Tracé (Réseaux)">✏️</button>
+        <button id="surface-btn" class="btn icon-btn-auth" onclick="toggleSurfaceMode()" style="display:none;" title="Dessiner une zone">📐</button>
         <button id="admin-btn" class="btn icon-btn-auth" onclick="openAdmin()" style="display:none;" title="Ajouter un utilisateur">⚙️</button>
         <span id="user-info"></span>
         <button id="auth-btn" class="btn icon-btn-auth" onclick="openLogin()">👤</button>
@@ -125,6 +126,42 @@
         </div>
     </div>
 
+    <!-- Surface UI Overlay -->
+    <div id="surface-overlay" class="hidden">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+            <h4 style="margin:0;">Dessin de zone</h4>
+            <div>
+                <button id="collapse-surface-btn" class="btn icon-btn" style="text-decoration:none; margin-right:5px;" onclick="toggleSurfaceCollapse()">—</button>
+                <button class="btn icon-btn" style="color:red; text-decoration:none;" onclick="cancelSurface()">❌</button>
+            </div>
+        </div>
+        <div id="surface-content">
+            <hr>
+            <input type="text" id="surface-name" placeholder="Nom de la zone" class="input-field" style="margin-bottom: 10px; width: calc(100% - 10px);">
+            <select id="surface-category" onchange="updateSurfaceColor()">
+                <option value='{"color":"red","type":"Danger"}'>❌ Danger (Rouge)</option>
+                <option value='{"color":"green","type":"Végétation"}'>🌳 Végétation (Vert)</option>
+                <option value='{"color":"blue","type":"Eau"}'>💧 Eau (Bleu)</option>
+                <option value='custom'>⚙️ Personnalisé...</option>
+            </select>
+            <div id="custom-surface-inputs" style="display:none; margin-top:10px; flex-direction:column; gap:5px;">
+                <input type="text" id="custom-surface-type" placeholder="Catégorie (ex: Bâtiment)" class="input-field">
+                <div style="display:flex; align-items:center; gap:10px;">
+                    <label for="custom-surface-color" style="font-size:14px;">Couleur :</label>
+                    <input type="color" id="custom-surface-color" value="#ff9900" onchange="updateSurfaceColor()" style="height:30px; width:40px; border:none; padding:0; background:transparent;">
+                </div>
+            </div>
+            <div style="display:flex; justify-content:space-between; margin-top: 10px; gap: 5px;">
+                <button class="btn" style="flex:1;" onclick="undoSurfacePoint()">↩ Retour</button>
+                <button class="btn" style="flex:1;" onclick="redoSurfacePoint()">Refaire ↪</button>
+            </div>
+            <div class="note-actions">
+                <button class="btn primary-btn" style="width:100%; margin-top: 10px;" onclick="saveSurface()">Enregistrer</button>
+            </div>
+            <p style="font-size:12px; color:gray; font-style:italic; margin:5px 0 0 0; line-height: 1.2;">Cliquez sur la carte pour définir la zone (min. 3 points). Fermer annulera.</p>
+        </div>
+    </div>
+
     <!-- Legend UI Overlay -->
     <div id="legend-overlay" class="hidden">
         <div style="display:flex; justify-content:space-between; align-items:center;">
@@ -147,6 +184,7 @@
         <div id="catalog-switch" style="display:flex; gap:6px; margin-bottom:10px;">
             <button id="catalog-lines-btn" class="btn btn-small" onclick="setCatalogMode('lines')">Lignes</button>
             <button id="catalog-lieux-btn" class="btn btn-small" onclick="setCatalogMode('lieux')">Lieux-dits</button>
+            <button id="catalog-surfaces-btn" class="btn btn-small" onclick="setCatalogMode('surfaces')">Zones</button>
         </div>
         <div id="catalog-content"></div>
     </div>

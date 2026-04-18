@@ -8,6 +8,13 @@ function onMapClick(e) {
         return;
     }
 
+    if (isSurfaceMode) {
+        currentSurfaceCoords.push([e.latlng.lat, e.latlng.lng]);
+        surfaceRedoStack = [];
+        redrawCurrentSurface();
+        return;
+    }
+
     if (!isDrawMode) return;
 
     currentLineCoords.push([e.latlng.lat, e.latlng.lng]);
@@ -48,6 +55,57 @@ function redrawCurrentLine() {
     }
 }
 
+window.undoSurfacePoint = function() {
+    if (!isSurfaceMode || currentSurfaceCoords.length === 0) return;
+    surfaceRedoStack.push(currentSurfaceCoords.pop());
+    redrawCurrentSurface();
+}
+
+window.redoSurfacePoint = function() {
+    if (!isSurfaceMode || surfaceRedoStack.length === 0) return;
+    currentSurfaceCoords.push(surfaceRedoStack.pop());
+    redrawCurrentSurface();
+}
+
+function redrawCurrentSurface() {
+    if (currentSurfaceLayer) {
+        map.removeLayer(currentSurfaceLayer);
+    }
+    if (currentSurfaceCoords.length > 0) {
+        currentSurfaceLayer = L.polygon(currentSurfaceCoords, {
+            color: currentSurfaceColor,
+            fillColor: currentSurfaceColor,
+            fillOpacity: 0.4,
+            weight: 2
+        }).addTo(map);
+    }
+}
+
+window.updateSurfaceColor = function() {
+    let select = document.getElementById('surface-category');
+    let customInputs = document.getElementById('custom-surface-inputs');
+    if (!select) return;
+
+    if (select.value === 'custom') {
+        customInputs.style.display = 'flex';
+        let customType = document.getElementById('custom-surface-type').value || 'Autre';
+        let customColor = document.getElementById('custom-surface-color').value;
+        currentSurfaceType = customType;
+        currentSurfaceColor = customColor;
+    } else {
+        customInputs.style.display = 'none';
+        try {
+            let val = JSON.parse(select.value);
+            currentSurfaceColor = val.color;
+            currentSurfaceType = val.type;
+        } catch (e) {}
+    }
+
+    if (currentSurfaceLayer) {
+        currentSurfaceLayer.setStyle({ color: currentSurfaceColor, fillColor: currentSurfaceColor });
+    }
+}
+
 function updateDrawColor() {
     let select = document.getElementById('draw-type');
     let customInputs = document.getElementById('custom-draw-inputs');
@@ -70,6 +128,149 @@ function updateDrawColor() {
     }
 }
 
+window.toggleSurfaceMode = function() {
+    isSurfaceMode = !isSurfaceMode;
+    const overlay = document.getElementById('surface-overlay');
+    const surfaceBtn = document.getElementById('surface-btn');
+
+    if (isSurfaceMode) {
+        overlay.classList.remove('hidden');
+        surfaceBtn.classList.add('active-mode');
+        if (isDrawMode) cancelDraw();
+        if (isLieuMode) cancelLieuMode();
+        if (typeof closePanel === 'function') closePanel();
+    } else {
+        cancelSurface();
+    }
+}
+
+window.cancelSurface = function() {
+    if (currentSurfaceCoords.length > 0 || editingSurfaceData) {
+        customConfirm("Êtes-vous sûr de vouloir annuler la zone en cours ?", () => {
+            executeCancelSurface();
+        });
+    } else {
+        executeCancelSurface();
+    }
+}
+
+function executeCancelSurface() {
+    isSurfaceMode = false;
+    document.getElementById('surface-overlay').classList.add('hidden');
+    document.getElementById('surface-btn').classList.remove('active-mode');
+
+    if (currentSurfaceLayer) {
+        map.removeLayer(currentSurfaceLayer);
+    }
+
+    if (editingSurfaceData) {
+        if (drawnSurfaces[editingSurfaceData.id] && !map.hasLayer(drawnSurfaces[editingSurfaceData.id])) {
+            map.addLayer(drawnSurfaces[editingSurfaceData.id]);
+            upsertSurfaceLocally(editingSurfaceData);
+        }
+        editingSurfaceData = null;
+    }
+
+    currentSurfaceLayer = null;
+    currentSurfaceCoords = [];
+    surfaceRedoStack = [];
+    document.getElementById('surface-name').value = '';
+}
+
+let isSurfaceCollapsed = false;
+window.toggleSurfaceCollapse = function() {
+    isSurfaceCollapsed = !isSurfaceCollapsed;
+    document.getElementById('surface-content').style.display = isSurfaceCollapsed ? 'none' : 'block';
+    document.getElementById('collapse-surface-btn').innerText = isSurfaceCollapsed ? '+' : '—';
+}
+
+window.saveSurface = function() {
+    if (currentSurfaceCoords.length < 3) {
+        customConfirm("Erreur: Veuillez tracer au moins 3 points pour sauvegarder une zone.", () => {});
+        return;
+    }
+
+    let surfaceName = document.getElementById('surface-name').value.trim() || 'Sans nom';
+
+    let surfaceDataObj = {
+        name: surfaceName,
+        color: currentSurfaceColor,
+        category: currentSurfaceType,
+        coordinates: currentSurfaceCoords
+    };
+
+    if (!navigator.onLine) {
+        clientLog("Zone sauvegardée hors ligne.");
+
+        if (editingSurfaceData) {
+            if (String(editingSurfaceData.id).startsWith('offline_')) {
+                offlineSurfacesQueue = offlineSurfacesQueue.filter(i => String(i.id) !== String(editingSurfaceData.id));
+            }
+            removeSurfaceLocally(editingSurfaceData.id);
+            editingSurfaceData = null;
+        }
+
+        let tempId = 'offline_' + Date.now();
+        surfaceDataObj.id = tempId;
+        surfaceDataObj.username = currentUser;
+        surfaceDataObj.created_at = new Date().toISOString();
+
+        offlineSurfacesQueue.push(surfaceDataObj);
+        localStorage.setItem('offlineSurfaces', JSON.stringify(offlineSurfacesQueue));
+
+        window.renderSurfaceLocally(surfaceDataObj);
+        executeCancelSurface();
+        return;
+    }
+
+    let savePromise;
+
+    if (editingSurfaceData) {
+        let oldId = editingSurfaceData.id;
+        if (String(oldId).startsWith('offline_')) {
+            offlineSurfacesQueue = offlineSurfacesQueue.filter(i => String(i.id) !== String(oldId));
+            localStorage.setItem('offlineSurfaces', JSON.stringify(offlineSurfacesQueue));
+            removeSurfaceLocally(oldId);
+            savePromise = Promise.resolve();
+        } else {
+            savePromise = fetch(`/api/surfaces/${oldId}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': 'Bearer ' + token }
+            }).then(() => {
+                removeSurfaceLocally(oldId);
+            });
+        }
+    } else {
+        savePromise = Promise.resolve();
+    }
+
+    savePromise.then(() => {
+        fetch('/api/surfaces', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer ' + token
+            },
+            body: JSON.stringify(surfaceDataObj)
+        })
+        .then(res => {
+            if (!res.ok) throw new Error("Could not save surface");
+            return res.json();
+        })
+        .then(data => {
+            let newData = { id: data.id, name: surfaceName, category: currentSurfaceType, username: currentUser, created_at: new Date(), coords: currentSurfaceCoords, color: currentSurfaceColor };
+            window.renderSurfaceLocally(newData);
+            editingSurfaceData = null;
+            executeCancelSurface();
+        })
+        .catch(err => {
+            alert("Erreur de sauvegarde zone: " + err.message);
+            editingSurfaceData = null;
+            executeCancelSurface();
+        });
+    });
+}
+
 function toggleDrawMode() {
     isDrawMode = !isDrawMode;
     const overlay = document.getElementById('draw-overlay');
@@ -78,8 +279,9 @@ function toggleDrawMode() {
     if (isDrawMode) {
         overlay.classList.remove('hidden');
         drawBtn.classList.add('active-mode');
-        cancelLieuMode();
-        closePanel(); // Close parcel panel to avoid confusion
+        if (isLieuMode) cancelLieuMode();
+        if (isSurfaceMode) cancelSurface();
+        if (typeof closePanel === 'function') closePanel();
     } else {
         cancelDraw();
     }
@@ -118,6 +320,16 @@ function executeCancelDraw() {
     document.getElementById('draw-distance').innerText = '0';
 }
 
+let isSurfaceMode = false;
+let currentSurfaceCoords = [];
+let currentSurfaceLayer = null;
+let currentSurfaceColor = 'red';
+let currentSurfaceType = 'Danger';
+let surfaceRedoStack = [];
+let editingSurfaceData = null;
+let drawnSurfaces = {};
+let offlineSurfacesQueue = JSON.parse(localStorage.getItem('offlineSurfaces') || '[]');
+
 let isLieuMode = false;
 let lieuxDitsLayers = {};
 
@@ -127,7 +339,8 @@ window.toggleLieuMode = function() {
 
     if (isLieuMode) {
         lieuBtn.classList.add('active-mode');
-        cancelDraw();
+        if (isDrawMode) cancelDraw();
+        if (isSurfaceMode) cancelSurface();
         closePanel();
     } else {
         cancelLieuMode();
@@ -148,6 +361,15 @@ document.addEventListener('keydown', function(e) {
             e.preventDefault();
             if (typeof saveLine === 'function') {
                 saveLine();
+            }
+        }
+    } else if (isSurfaceMode) {
+        if (e.key === 'Escape') {
+            cancelSurface();
+        } else if (e.key === 'Enter') {
+            e.preventDefault();
+            if (typeof saveSurface === 'function') {
+                saveSurface();
             }
         }
     }
@@ -314,6 +536,10 @@ window.renderLegend = function() {
             let iconOnly = type.replace('Lieux-dits ', '');
             prefix = `<span style="display:inline-block; font-size:16px; margin-right:5px;">${iconOnly}</span>`;
             label = 'Lieux-dits';
+        } else if (type.startsWith('Zone: ')) {
+            let colorExample = linesByData.find(i => i.data.type === type)?.data.color || '#000';
+            prefix = `<span style="display:inline-block; width:14px; height:14px; background-color:${colorExample}; margin-right:5px; opacity:0.6; border:1px solid ${colorExample}"></span>`;
+            label = type.replace('Zone: ', '');
         } else {
             let colorExample = linesByData.find(i => i.data.type === type)?.data.color || '#000';
             prefix = `<span style="display:inline-block; width:12px; height:3px; background-color:${colorExample}; margin-right:5px;"></span>`;
@@ -628,7 +854,10 @@ window.renderLineLocally = function(lineData, options = {}) {
 
     // Centered popup hack instead of bindPopup
     group.on('click', function(e) {
-        if (isDrawMode || isLieuMode) return;
+        if (isDrawMode || isLieuMode || isSurfaceMode) {
+            if (typeof onMapClick === 'function') onMapClick({latlng: e.latlng});
+            return;
+        }
         L.popup()
           .setLatLng(e.latlng)
           .setContent(popupContent)
@@ -719,6 +948,7 @@ function loadSavedLines() {
             });
 
             loadSavedLieux();
+            loadSavedSurfaces();
             renderLegend();
             updateVisibility();
 
@@ -726,6 +956,95 @@ function loadSavedLines() {
                 startLinesAutoRefresh();
             }
         });
+}
+
+window.loadSavedSurfaces = function() {
+    fetch('/api/surfaces')
+        .then(res => res.json())
+        .then(data => {
+            if (data.error) return;
+            data.forEach(surface => upsertSurfaceLocally(surface, { skipRefresh: true }));
+
+            const offlineQueue = JSON.parse(localStorage.getItem('offlineSurfaces') || '[]');
+            offlineQueue.forEach(surface => upsertSurfaceLocally(surface, { skipRefresh: true }));
+
+            renderLegend();
+            updateVisibility();
+
+            if (typeof startSurfacesAutoRefresh === 'function') {
+                startSurfacesAutoRefresh();
+            }
+        });
+}
+
+window.syncOfflineSurfaces = async function() {
+    if(offlineSurfacesQueue.length === 0 || !token) return;
+    const backupQueue = [...offlineSurfacesQueue];
+    offlineSurfacesQueue = [];
+    localStorage.removeItem('offlineSurfaces');
+
+    let syncedAny = false;
+    for (let surface of backupQueue) {
+        try {
+            let res = await fetch('/api/surfaces', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+                body: JSON.stringify(surface)
+            });
+            if (res.ok) {
+                syncedAny = true;
+                if (drawnSurfaces[surface.id]) {
+                    map.removeLayer(drawnSurfaces[surface.id]);
+                    delete drawnSurfaces[surface.id];
+                    linesByData = linesByData.filter(i => i.data.id !== surface.id);
+                }
+            } else {
+                offlineSurfacesQueue.push(surface);
+            }
+        } catch(e) {
+            offlineSurfacesQueue.push(surface);
+        }
+    }
+    localStorage.setItem('offlineSurfaces', JSON.stringify(offlineSurfacesQueue));
+    if (syncedAny) {
+        renderLegend();
+        loadSavedSurfaces();
+    }
+}
+
+let surfaceRefreshTimer = null;
+let lastSurfaceEventId = parseInt(localStorage.getItem('lastSurfaceEventId') || '0', 10);
+if (Number.isNaN(lastSurfaceEventId)) lastSurfaceEventId = 0;
+
+async function refreshSurfaceChanges() {
+    if (!navigator.onLine || document.hidden) return;
+
+    try {
+        const res = await fetch(`/api/surfaces/changes?since=${lastSurfaceEventId}&limit=150`);
+        if (!res.ok) return;
+        const payload = await res.json();
+        const changes = payload.changes || [];
+        if (changes.length === 0) return;
+
+        changes.forEach(change => {
+            if (change.type === 'delete') {
+                removeSurfaceLocally(change.surfaceId, { skipRefresh: true });
+            } else if (change.type === 'upsert' && change.surface) {
+                upsertSurfaceLocally(change.surface, { skipRefresh: true });
+            }
+            if (change.eventId > lastSurfaceEventId) lastSurfaceEventId = change.eventId;
+        });
+
+        localStorage.setItem('lastSurfaceEventId', String(lastSurfaceEventId));
+        renderLegend();
+        updateVisibility();
+    } catch (err) {}
+}
+
+window.startSurfacesAutoRefresh = function() {
+    if (surfaceRefreshTimer) clearInterval(surfaceRefreshTimer);
+    refreshSurfaceChanges();
+    surfaceRefreshTimer = setInterval(refreshSurfaceChanges, 5000);
 }
 
 let lineRefreshTimer = null;
@@ -812,7 +1131,10 @@ function bindLieuPopup(marker, lieu) {
     }
 
     marker.on('click', function(e) {
-        if (isDrawMode || isLieuMode) return;
+        if (isDrawMode || isLieuMode || isSurfaceMode) {
+            if (typeof onMapClick === 'function') onMapClick({latlng: e.latlng});
+            return;
+        }
         L.popup()
           .setLatLng(e.latlng)
           .setContent(popupContent)
@@ -976,10 +1298,191 @@ function bindLinePopup(layer, lineData) {
     }
 
     layer.on('click', function(e) {
-        if (isDrawMode || isLieuMode) return;
+        if (isDrawMode || isLieuMode || isSurfaceMode) {
+            if (typeof onMapClick === 'function') onMapClick({latlng: e.latlng});
+            return;
+        }
         L.popup()
           .setLatLng(e.latlng)
           .setContent(popupContent)
           .openOn(map);
+    });
+}
+
+// ...existing code...
+window.renderSurfaceLocally = function(surfaceData, options = {}) {
+    const skipRefresh = !!options.skipRefresh;
+    let coords = surfaceData.coordinates || surfaceData.coords || [];
+    if (typeof coords === 'string') {
+        try { coords = JSON.parse(coords); } catch(e) { coords = []; }
+    }
+
+    if (coords.length < 3) return;
+
+    let polygon = L.polygon(coords, {
+        color: surfaceData.color || 'red',
+        fillColor: surfaceData.color || 'red',
+        fillOpacity: 0.4,
+        weight: 2
+    }).addTo(map);
+
+    let area = L.GeometryUtil ? L.GeometryUtil.geodesicArea(coords) : 0;
+    let title = surfaceData.name || 'Zone sans nom';
+    let cat = surfaceData.category || 'Danger';
+
+    let popupContent = `<strong>Catégorie : ${cat}</strong><br>Nom : ${title}<br><small>Tracée par ${surfaceData.username || 'Inconnu'} le ${typeof formatCommentDate === 'function' ? formatCommentDate(surfaceData.created_at) : new Date(surfaceData.created_at).toLocaleString()}</small>`;
+
+    if (String(surfaceData.id).startsWith('offline_')) {
+        popupContent += `<br><span class="offline-badge">Hors ligne</span>`;
+    }
+
+    if (token && (currentUser === 'admin' || currentUser === surfaceData.username)) {
+        popupContent += `<br><button class="btn btn-small" style="background:#ccffcc; color:#005500; margin-top:5px; margin-right:5px; text-decoration:none;" onclick="editSurface('${surfaceData.id}')">✏️ Modifier</button>`;
+        popupContent += `<button class="btn btn-small" style="background:#ffcccc; color:red; margin-top:5px; text-decoration:none;" onclick="deleteSurface('${surfaceData.id}')">🗑️ Supprimer</button>`;
+    }
+
+    let group = L.featureGroup([polygon]).addTo(map);
+
+    let maxDist = 0;
+    let angle = 0;
+    for(let i=0; i<coords.length; i++) {
+        let p1 = coords[i];
+        let p2 = coords[(i+1)%coords.length];
+
+        let point1 = map.project(p1, map.getMaxZoom());
+        let point2 = map.project(p2, map.getMaxZoom());
+
+        let dx = point2.x - point1.x;
+        let dy = point2.y - point1.y;
+        let dist = dx*dx + dy*dy;
+        if(dist > maxDist) {
+            maxDist = dist;
+            angle = Math.atan2(dy, dx) * 180 / Math.PI;
+        }
+    }
+
+    if (angle > 90 || angle < -90) {
+        angle += 180;
+    }
+
+    let labelIcon = L.divIcon({
+        className: 'surface-label-icon',
+        html: `<div style="position:absolute; left:0; top:0; transform: translate(-50%, -50%); pointer-events:none;"><div style="transform: rotate(${angle}deg) scale(var(--map-zoom-scale, 1)); transform-origin: center center; color: ${surfaceData.color || 'red'}; opacity: 0.8; font-weight: bold; text-shadow: 1px 1px 0px rgba(255,255,255,0.7), -1px -1px 0px rgba(255,255,255,0.7), 1px -1px 0px rgba(255,255,255,0.7), -1px 1px 0px rgba(255,255,255,0.7); font-size: 16px; filter: brightness(0.6); pointer-events: none; white-space: nowrap;">${title}</div></div>`,
+        iconSize: [0, 0]
+    });
+    
+    L.marker(polygon.getBounds().getCenter(), {icon: labelIcon, interactive: false}).addTo(group);
+
+    polygon.on('click', function(e) {
+        if (isDrawMode || isSurfaceMode || isLieuMode) {
+            if (typeof onMapClick === 'function') onMapClick({latlng: e.latlng});
+            return;
+        }
+        L.popup()
+          .setLatLng(e.latlng)
+          .setContent(popupContent)
+          .openOn(map);
+    });
+
+    drawnSurfaces[surfaceData.id] = group;
+    linesByData.push({ layer: group, data: { ...surfaceData, type: `Zone: ${cat}`, isSurface: true } });
+
+    if (!skipRefresh) {
+        renderLegend();
+        updateVisibility();
+    }
+}
+
+function removeSurfaceLocally(surfaceId, options = {}) {
+    const skipRefresh = !!options.skipRefresh;
+    if (drawnSurfaces[surfaceId]) {
+        map.removeLayer(drawnSurfaces[surfaceId]);
+        delete drawnSurfaces[surfaceId];
+    }
+    linesByData = linesByData.filter(i => !(i.data.isSurface && String(i.data.id) === String(surfaceId)));
+    if (!skipRefresh) {
+        renderLegend();
+        updateVisibility();
+    }
+}
+
+function upsertSurfaceLocally(surfaceData, options = {}) {
+    const normalized = { ...surfaceData };
+    if (typeof normalized.coordinates === 'string') {
+        try { normalized.coordinates = JSON.parse(normalized.coordinates); } catch (e) {}
+    }
+    removeSurfaceLocally(normalized.id, { skipRefresh: true });
+    window.renderSurfaceLocally(normalized, { skipRefresh: true });
+    if (!options.skipRefresh) {
+        renderLegend();
+        updateVisibility();
+    }
+}
+
+window.editSurface = function(surfaceId) {
+    const item = linesByData.find(i => i.data.isSurface && String(i.data.id) === String(surfaceId));
+    if (!item) return;
+
+    const surfaceData = item.data;
+    if (!token || !(currentUser === 'admin' || currentUser === surfaceData.username)) return;
+
+    editingSurfaceData = surfaceData;
+
+    const coords = typeof surfaceData.coordinates === 'string'
+        ? JSON.parse(surfaceData.coordinates)
+        : (surfaceData.coordinates || surfaceData.coords || []);
+
+    currentSurfaceCoords = [...coords];
+    surfaceRedoStack = [];
+
+    document.getElementById('surface-name').value = surfaceData.name || '';
+
+    const select = document.getElementById('surface-category');
+    let found = false;
+    for (let option of select.options) {
+        try {
+            const optVal = JSON.parse(option.value);
+            if (optVal.type === surfaceData.category) {
+                select.value = option.value;
+                found = true;
+                break;
+            }
+        } catch (e) {}
+    }
+    if (!found) {
+        select.value = 'custom';
+        document.getElementById('custom-surface-type').value = surfaceData.category || 'Autre';
+        document.getElementById('custom-surface-color').value = surfaceData.color || '#ff9900';
+    }
+
+    if (!isSurfaceMode) toggleSurfaceMode();
+    window.updateSurfaceColor();
+    redrawCurrentSurface();
+
+    if (drawnSurfaces[surfaceData.id]) {
+        map.removeLayer(drawnSurfaces[surfaceData.id]);
+    }
+    map.closePopup();
+}
+
+window.deleteSurface = function(surfaceId) {
+    customConfirm('Supprimer cette zone ?', () => {
+        if (String(surfaceId).startsWith('offline_')) {
+            offlineSurfacesQueue = offlineSurfacesQueue.filter(i => String(i.id) !== String(surfaceId));
+            localStorage.setItem('offlineSurfaces', JSON.stringify(offlineSurfacesQueue));
+            removeSurfaceLocally(surfaceId);
+            map.closePopup();
+            return;
+        }
+
+        fetch(`/api/surfaces/${surfaceId}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': 'Bearer ' + token }
+        }).then(res => {
+            if (res.ok) {
+                removeSurfaceLocally(surfaceId);
+                map.closePopup();
+            }
+        });
     });
 }

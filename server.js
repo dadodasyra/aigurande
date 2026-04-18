@@ -93,6 +93,46 @@ const db = new sqlite3.Database('./database.sqlite', (err) => {
                 END;
             `);
 
+            db.run(`CREATE TABLE IF NOT EXISTS surfaces (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT,
+                category TEXT,
+                color TEXT,
+                coordinates TEXT,
+                user_id INTEGER,
+                is_hidden INTEGER DEFAULT 0,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            )`);
+
+            db.run(`CREATE TABLE IF NOT EXISTS surface_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_type TEXT,
+                surface_id INTEGER,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )`);
+
+            db.run(`CREATE TRIGGER IF NOT EXISTS surfaces_after_insert
+                AFTER INSERT ON surfaces
+                BEGIN
+                    INSERT INTO surface_events (event_type, surface_id) VALUES ('upsert', NEW.id);
+                END;
+            `);
+
+            db.run(`CREATE TRIGGER IF NOT EXISTS surfaces_after_update
+                AFTER UPDATE ON surfaces
+                BEGIN
+                    INSERT INTO surface_events (event_type, surface_id) VALUES ('upsert', NEW.id);
+                END;
+            `);
+
+            db.run(`CREATE TRIGGER IF NOT EXISTS surfaces_after_delete
+                AFTER DELETE ON surfaces
+                BEGIN
+                    INSERT INTO surface_events (event_type, surface_id) VALUES ('delete', OLD.id);
+                END;
+            `);
+
             db.run(`CREATE TABLE IF NOT EXISTS lieux_dits (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 title TEXT,
@@ -359,6 +399,114 @@ app.delete('/api/lines/category/:type', authenticateToken, (req, res) => {
     });
 });
 
+// Surfaces routes
+app.get('/api/surfaces', (req, res) => {
+    db.all(`SELECT surfaces.*, users.username FROM surfaces LEFT JOIN users ON surfaces.user_id = users.id WHERE surfaces.is_hidden = 0`, [], (err, rows) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json(rows);
+    });
+});
+
+app.get('/api/surfaces/changes', (req, res) => {
+    const since = parseInt(req.query.since || '0', 10);
+    const limit = Math.min(parseInt(req.query.limit || '100', 10), 500);
+
+    db.all(
+        `SELECT
+            surface_events.id AS event_id,
+            surface_events.event_type,
+            surface_events.surface_id,
+            surfaces.id,
+            surfaces.name,
+            surfaces.category,
+            surfaces.color,
+            surfaces.coordinates,
+            surfaces.user_id,
+            surfaces.is_hidden,
+            surfaces.created_at,
+            users.username
+         FROM surface_events
+         LEFT JOIN surfaces ON surfaces.id = surface_events.surface_id
+         LEFT JOIN users ON users.id = surfaces.user_id
+         WHERE surface_events.id > ?
+         ORDER BY surface_events.id ASC
+         LIMIT ?`,
+        [since, limit],
+        (err, rows) => {
+            if (err) return res.status(500).json({ error: err.message });
+
+            const changes = rows.map((row) => {
+                if (row.event_type === 'delete' || !row.id || Number(row.is_hidden) === 1) {
+                    return { eventId: row.event_id, type: 'delete', surfaceId: row.surface_id };
+                }
+
+                return {
+                    eventId: row.event_id,
+                    type: 'upsert',
+                    surfaceId: row.surface_id,
+                    surface: {
+                        id: row.id,
+                        name: row.name,
+                        category: row.category,
+                        color: row.color,
+                        coordinates: row.coordinates,
+                        user_id: row.user_id,
+                        created_at: row.created_at,
+                        username: row.username
+                    }
+                };
+            });
+
+            res.json({ changes });
+        }
+    );
+});
+
+app.post('/api/surfaces', authenticateToken, (req, res) => {
+    if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+    const { name, category, color, coordinates } = req.body;
+    const coordsStr = JSON.stringify(coordinates);
+    db.run(`INSERT INTO surfaces (name, category, color, coordinates, user_id) VALUES (?, ?, ?, ?, ?)`,
+        [name, category, color, coordsStr, req.user.id], function(err) {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ id: this.lastID });
+    });
+});
+
+app.put('/api/surfaces/:id', authenticateToken, (req, res) => {
+    if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+    const { name, category, color, coordinates } = req.body;
+    const coordsStr = JSON.stringify(coordinates);
+    db.run(`UPDATE surfaces SET name = ?, category = ?, color = ?, coordinates = ? WHERE id = ? AND user_id = ?`,
+        [name, category, color, coordsStr, req.params.id, req.user.id], function(err) {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ success: this.changes > 0 });
+    });
+});
+
+app.delete('/api/surfaces/:id', authenticateToken, (req, res) => {
+    if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+    if (req.user.username === 'admin') {
+        db.run(`UPDATE surfaces SET is_hidden = 1 WHERE id = ?`, [req.params.id], function(err) {
+            if (err) return res.status(500).json({ error: err.message });
+            res.json({ success: this.changes > 0 });
+        });
+    } else {
+        db.run(`UPDATE surfaces SET is_hidden = 1 WHERE id = ? AND user_id = ?`, [req.params.id, req.user.id], function(err) {
+            if (err) return res.status(500).json({ error: err.message });
+            res.json({ success: this.changes > 0 });
+        });
+    }
+});
+
+app.delete('/api/surfaces/category/:category', authenticateToken, (req, res) => {
+    if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+    db.run(`UPDATE surfaces SET is_hidden = 1 WHERE category = ? AND user_id = ?`, [req.params.category, req.user.id], function(err) {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ success: true, deleted: this.changes });
+    });
+});
+
 // Lieux-dits routes
 app.get('/api/lieux', (req, res) => {
     db.all(`SELECT lieux_dits.*, users.username FROM lieux_dits LEFT JOIN users ON lieux_dits.user_id = users.id WHERE lieux_dits.is_hidden = 0`, [], (err, rows) => {
@@ -412,7 +560,7 @@ app.delete('/api/lieux/category/all', authenticateToken, (req, res) => {
 
 // Comments routes
 function isValidEntityRef(entityRef) {
-    return /^(line|lieu):\d+$/.test(String(entityRef || ''));
+    return /^(line|lieu|surface):\d+$/.test(String(entityRef || ''));
 }
 
 app.get('/api/comments/:entityRef', (req, res) => {
