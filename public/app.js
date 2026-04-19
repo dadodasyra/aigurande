@@ -1,3 +1,5 @@
+window.BASE_PATH = window.location.pathname.replace(/\/$/, "");
+
 let map;
 let geojsonLayer;
 let currentParcelId = null;
@@ -6,6 +8,7 @@ let currentUser = localStorage.getItem('username') || null;
 
 // Initialization array for offline Notes
 let offlineNotesQueue = JSON.parse(localStorage.getItem('offlineNotes') || '[]');
+let offlineRatingsQueue = JSON.parse(localStorage.getItem('offlineRatings') || '[]');
 
 let layersControl;
 
@@ -254,10 +257,15 @@ function openPanel(feature) {
             <button class="btn btn-small" onclick="toggleMoreInfo()" id="toggle-info-btn">Voir plus ↓</button>
         </div>
         <ul id="parcel-more-info" style="display:none; margin-top:10px; padding-left: 20px; font-size:14px;">${otherPropsHTML}</ul>
+        <div id="parcel-rating-container" style="margin-top:10px; display:flex; align-items:center; gap:5px;">
+            <strong style="font-size:14px;">Évaluation Globale :</strong>
+            <span id="parcel-stars"></span>
+        </div>
     `;
 
     // Load notes
     loadNotes(currentParcelId);
+    loadGlobalRating('parcel:' + currentParcelId, 'parcel-stars');
 
     document.getElementById('panel').classList.add('open');
     updateAuthUI();
@@ -626,6 +634,7 @@ window.onload = () => {
 
 window.addEventListener('online', () => {
     syncOfflineNotes();
+    syncOfflineRatings();
     if (typeof syncOfflineLines === 'function') syncOfflineLines();
     if (typeof syncOfflineSurfaces === 'function') syncOfflineSurfaces();
     clientLog("System is online. Syncing offline data...");
@@ -645,4 +654,114 @@ window.locateUser = function(e) {
 window.recenterMap = function(e) {
     if (e) e.preventDefault();
     map.setView([46.4528333, 1.8601111], 15);
+}
+
+// Ratings logic
+window.loadGlobalRating = function(entityRef, containerId) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    
+    // Check locally first
+    const offlineRating = offlineRatingsQueue.find(r => r.entityRef === entityRef);
+    if (offlineRating) {
+        container.innerHTML = generateStarsHTML(offlineRating.rating, entityRef);
+        return;
+    }
+    
+    container.innerHTML = generateStarsHTML(0, entityRef);
+    
+    fetch(window.BASE_PATH + `/api/ratings/${encodeURIComponent(entityRef)}`)
+        .then(res => res.json())
+        .then(data => {
+            const rating = data.rating || 0;
+            container.innerHTML = generateStarsHTML(rating, entityRef);
+        })
+        .catch(() => {
+            // failed, leave default 0 text
+        });
+}
+
+window.generateStarsHTML = function(rating, entityRef) {
+    let html = '';
+    for (let i = 1; i <= 5; i++) {
+        const starChar = i <= rating ? '★' : '☆';
+        const color = i <= rating ? '#ffca28' : '#ccc';
+        html += `<span style="cursor:pointer; font-size:20px; color:${color}; transition:0.2s;" 
+                    onclick="event.stopPropagation(); submitGlobalRating('${entityRef}', ${i})"
+                    onmouseover="this.style.transform='scale(1.2)'"
+                    onmouseout="this.style.transform='scale(1)'">${starChar}</span>`;
+    }
+    return html;
+}
+
+window.submitGlobalRating = function(entityRef, rating) {
+    if (!token) {
+        customConfirm("Vous devez être connecté pour évaluer.", () => {});
+        return;
+    }
+    
+    // Optimistic UI Update
+    const refreshUI = () => {
+        const parcelContainer = document.getElementById('parcel-stars');
+        if (parcelContainer && currentParcelId && entityRef === 'parcel:' + currentParcelId) {
+            parcelContainer.innerHTML = generateStarsHTML(rating, entityRef);
+        }
+        const popupWrapper = document.getElementById(`rating-container-${entityRef.replace(':','-')}`);
+        if (popupWrapper) {
+            popupWrapper.innerHTML = generateStarsHTML(rating, entityRef);
+        }
+    };
+    refreshUI();
+
+    if (!navigator.onLine) {
+        offlineRatingsQueue = offlineRatingsQueue.filter(r => r.entityRef !== entityRef);
+        offlineRatingsQueue.push({ entityRef, rating });
+        localStorage.setItem('offlineRatings', JSON.stringify(offlineRatingsQueue));
+        return;
+    }
+
+    fetch(window.BASE_PATH + `/api/ratings/${encodeURIComponent(entityRef)}`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + token
+        },
+        body: JSON.stringify({ rating })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (!data.success) {
+            customConfirm("Erreur lors de l'évaluation: " + (data.error || 'inconnue'), () => {});
+        }
+    })
+    .catch(() => {
+        offlineRatingsQueue = offlineRatingsQueue.filter(r => r.entityRef !== entityRef);
+        offlineRatingsQueue.push({ entityRef, rating });
+        localStorage.setItem('offlineRatings', JSON.stringify(offlineRatingsQueue));
+    });
+}
+
+window.syncOfflineRatings = async function() {
+    if(offlineRatingsQueue.length === 0 || !token) return;
+    const queue = [...offlineRatingsQueue];
+    offlineRatingsQueue = [];
+    localStorage.removeItem('offlineRatings');
+
+    for (let item of queue) {
+        try {
+            let res = await fetch(window.BASE_PATH + `/api/ratings/${encodeURIComponent(item.entityRef)}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+                body: JSON.stringify({ rating: item.rating })
+            });
+            if (!res.ok) {
+                offlineRatingsQueue.push(item);
+            }
+        } catch(e) {
+            offlineRatingsQueue.push(item);
+        }
+    }
+    if (offlineRatingsQueue.length > 0) {
+        localStorage.setItem('offlineRatings', JSON.stringify(offlineRatingsQueue));
+    }
 }

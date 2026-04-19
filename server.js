@@ -158,6 +158,14 @@ const db = new sqlite3.Database('./database.sqlite', (err) => {
 
             db.run(`CREATE INDEX IF NOT EXISTS idx_entity_comments_ref ON entity_comments(entity_ref)`);
 
+            db.run(`CREATE TABLE IF NOT EXISTS global_ratings (
+                entity_ref TEXT PRIMARY KEY,
+                rating INTEGER,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                user_id INTEGER,
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            )`);
+
             // Seed an admin user
             db.get("SELECT id FROM users WHERE username='admin'", (err, row) => {
                 if (!row) {
@@ -639,6 +647,34 @@ app.delete('/api/comments/:id', authenticateToken, (req, res) => {
             res.json({ success: this.changes > 0 });
         });
     }
+});
+
+// Ratings routes
+app.get('/api/ratings/:entityRef', (req, res) => {
+    const entityRef = req.params.entityRef;
+    db.get(`SELECT rating FROM global_ratings WHERE entity_ref = ?`, [entityRef], (err, row) => {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json(row ? row : { rating: 0 });
+    });
+});
+
+app.post('/api/ratings/:entityRef', authenticateToken, (req, res) => {
+    if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+    const entityRef = req.params.entityRef;
+    const rating = parseInt(req.body.rating, 10);
+    
+    if (isNaN(rating) || rating < 1 || rating > 5) {
+        return res.status(400).json({ error: 'Invalid rating. Must be 1 to 5.' });
+    }
+
+    db.run(
+        `REPLACE INTO global_ratings (entity_ref, rating, updated_at, user_id) VALUES (?, ?, CURRENT_TIMESTAMP, ?)`,
+        [entityRef, rating, req.user.id],
+        function(err) {
+            if (err) return res.status(500).json({ error: err.message });
+            res.json({ success: true, rating });
+        }
+    );
 });
 
 app.listen(PORT, () => {

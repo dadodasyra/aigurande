@@ -245,7 +245,7 @@ window.saveSurface = function() {
     }
 
     savePromise.then(() => {
-        fetch('/api/surfaces', {
+        fetch(window.BASE_PATH + '/api/surfaces', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -899,7 +899,7 @@ function saveLine() {
     }
 
     savePromise.then(() => {
-        fetch('/api/lines', {
+        fetch(window.BASE_PATH + '/api/lines', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -1015,7 +1015,7 @@ window.syncOfflineLines = async function() {
     let syncedAny = false;
     for (let line of backupLineQueue) {
         try {
-            let res = await fetch('/api/lines', {
+            let res = await fetch(window.BASE_PATH + '/api/lines', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
                 body: JSON.stringify(line)
@@ -1043,7 +1043,7 @@ window.syncOfflineLines = async function() {
 }
 
 function loadSavedLines() {
-    fetch('/api/lines')
+    fetch(window.BASE_PATH + '/api/lines')
         .then(res => res.json())
         .then(data => {
             if (data.error) return;
@@ -1067,7 +1067,7 @@ function loadSavedLines() {
 }
 
 window.loadSavedSurfaces = function() {
-    fetch('/api/surfaces')
+    fetch(window.BASE_PATH + '/api/surfaces')
         .then(res => res.json())
         .then(data => {
             if (data.error) return;
@@ -1094,7 +1094,7 @@ window.syncOfflineSurfaces = async function() {
     let syncedAny = false;
     for (let surface of backupQueue) {
         try {
-            let res = await fetch('/api/surfaces', {
+            let res = await fetch(window.BASE_PATH + '/api/surfaces', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
                 body: JSON.stringify(surface)
@@ -1193,7 +1193,7 @@ window.startLinesAutoRefresh = function() {
 }
 
 window.loadSavedLieux = function() {
-    fetch('/api/lieux')
+    fetch(window.BASE_PATH + '/api/lieux')
         .then(res => res.json())
         .then(data => {
             if (data.error) return;
@@ -1252,7 +1252,7 @@ function bindLieuPopup(marker, lieu) {
 }
 
 function saveLieuDit(title, description, icon, lat, lng) {
-    fetch('/api/lieux', {
+    fetch(window.BASE_PATH + '/api/lieux', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -1435,11 +1435,31 @@ window.renderSurfaceLocally = function(surfaceData, options = {}) {
         weight: 2
     }).addTo(map);
 
-    let area = L.GeometryUtil ? L.GeometryUtil.geodesicArea(coords) : 0;
+    let area = 0;
+    if (coords.length > 2) {
+        // Calculation of polygon area on a sphere
+        for (let i = 0; i < coords.length; i++) {
+            let p1 = coords[i];
+            let p2 = coords[(i + 1) % coords.length];
+            let lng1 = p1[1] || p1.lng;
+            let lat1 = p1[0] || p1.lat;
+            let lng2 = p2[1] || p2.lng;
+            let lat2 = p2[0] || p2.lat;
+
+            area += (lng2 - lng1) * Math.PI / 180 *
+                    (2 + Math.sin(lat1 * Math.PI / 180) + Math.sin(lat2 * Math.PI / 180));
+        }
+        area = Math.abs(area * 6378137.0 * 6378137.0 / 2.0);
+    }
+
     let title = surfaceData.name || 'Zone sans nom';
     let cat = surfaceData.category || 'Danger';
 
-    let popupContent = `<strong>Catégorie : ${cat}</strong><br>Nom : ${title}<br><small>Tracée par ${surfaceData.username || 'Inconnu'} le ${typeof formatCommentDate === 'function' ? formatCommentDate(surfaceData.created_at) : new Date(surfaceData.created_at).toLocaleString()}</small>`;
+    let popupContent = `<strong>Zone : ${cat}</strong><br>Nom : ${title}<br>Surface : ${(area / 10000).toFixed(2)} ha<br><small>Tracé par ${surfaceData.username || 'Inconnu'} le ${formatCommentDate(surfaceData.created_at)}</small>`;
+    popupContent += `<br><button class="btn btn-small" style="margin-top:5px; margin-right:5px;" onclick="openCommentsModal('surface','${surfaceData.id}','Zone #${surfaceData.id}')">💬 Commentaires</button>`;
+
+    // Add Rating UI wrapper
+    popupContent += `<div id="rating-container-surface-${surfaceData.id}" style="margin-top:10px; display:flex; align-items:center; gap:5px;"><strong style="font-size:12px;">Évaluation Globale :</strong></div>`;
 
     if (String(surfaceData.id).startsWith('offline_')) {
         popupContent += `<br><span class="offline-badge">Hors ligne</span>`;
@@ -1491,6 +1511,13 @@ window.renderSurfaceLocally = function(surfaceData, options = {}) {
           .setLatLng(e.latlng)
           .setContent(popupContent)
           .openOn(map);
+
+        // Load the rating *after* the popup opens because the DOM element needs to exist
+        setTimeout(() => {
+            if (typeof loadGlobalRating === 'function') {
+                loadGlobalRating('surface:' + surfaceData.id, 'rating-container-surface-' + surfaceData.id);
+            }
+        }, 50);
     });
 
     drawnSurfaces[surfaceData.id] = group;
