@@ -1046,11 +1046,15 @@ window.renderLineLocally = function(lineData, options = {}) {
     L.polyline(coords, {color: lineData.color, weight: 3}).addTo(group);
 
     let popupContent = `<strong>Réseau : ${lineData.type}</strong><br>Distance : ${lineData.distance} m<br><small>Tracé par ${lineData.username || 'Inconnu'} le ${formatCommentDate(lineData.created_at)}</small>`;
-    popupContent += `<br><button class="btn btn-small" style="margin-top:5px; margin-right:5px;" onclick="openCommentsModal('line','${lineData.id}','Ligne #${lineData.id}')">💬 Commentaires</button>`;
-
+    popupContent += `<div style="display:flex; justify-content:space-between; align-items:center; margin-top:5px;">`;
+    popupContent += `<button class="btn btn-small" onclick="openCommentsModal('line','${lineData.id}','Ligne #${lineData.id}')">💬 Commentaires</button>`;
+    
     if (String(lineData.id).startsWith('offline_')) {
-        popupContent += `<br><span class="offline-badge">Hors ligne</span>`;
+        popupContent += `<span class="offline-badge">Hors ligne</span>`;
     }
+    
+    popupContent += `<button class="btn icon-btn" style="padding:4px; margin:0; width:30px; height:30px; display:flex; align-items:center; justify-content:center;" onclick="copyShareLink('line','${lineData.id}', this)" title="Copier le lien">🔗</button>`;
+    popupContent += `</div>`;
 
     if (token && (currentUser === 'admin' || currentUser === lineData.username)) {
         popupContent += `<br><button class="btn btn-small" style="background:#ccffcc; color:#005500; margin-top:5px; margin-right:5px; text-decoration:none;" onclick="editLine('${lineData.id}')">✏️ Modifier</button>`;
@@ -1328,7 +1332,10 @@ function renderLieuDit(lieu) {
 function bindLieuPopup(marker, lieu) {
     let iconChar = lieu.icon || '📌';
     let popupContent = `<strong>${iconChar} ${lieu.title}</strong><br><em>${lieu.description || ''}</em><br><small>Ajouté par ${lieu.username || 'Inconnu'} le ${formatCommentDate(lieu.created_at)}</small>`;
-    popupContent += `<br><button class="btn btn-small" style="margin-top:5px; margin-right:5px;" onclick="openCommentsModal('lieu','${lieu.id}','Lieu-dit #${lieu.id}')">💬 Commentaires</button>`;
+    popupContent += `<div style="display:flex; justify-content:space-between; align-items:center; margin-top:5px;">`;
+    popupContent += `<button class="btn btn-small" onclick="openCommentsModal('lieu','${lieu.id}','Lieu-dit #${lieu.id}')">💬 Commentaires</button>`;
+    popupContent += `<button class="btn icon-btn" style="padding:4px; margin:0; width:30px; height:30px; display:flex; align-items:center; justify-content:center;" onclick="copyShareLink('lieu','${lieu.id}', this)" title="Copier le lien">🔗</button>`;
+    popupContent += `</div>`;
 
     if (token && (currentUser === 'admin' || currentUser === lieu.username)) {
         popupContent += `<br><button class="btn btn-small" style="background:#ccffcc; color:#005500; margin-top:5px; margin-right:5px; text-decoration:none;" onclick="editLieuDit('${lieu.id}')">✏️ Modifier</button>`;
@@ -1496,7 +1503,10 @@ window.deleteLine = function(lineId) {
 
 function bindLinePopup(layer, lineData) {
     let popupContent = `<strong>Réseau : ${lineData.type}</strong><br>Distance : ${lineData.distance} m<br><small>Tracé par ${lineData.username || 'Inconnu'} le ${formatCommentDate(lineData.created_at)}</small>`;
-    popupContent += `<br><button class="btn btn-small" style="margin-top:5px; margin-right:5px;" onclick="openCommentsModal('line','${lineData.id}','Ligne #${lineData.id}')">💬 Commentaires</button>`;
+    popupContent += `<div style="display:flex; justify-content:space-between; align-items:center; margin-top:5px;">`;
+    popupContent += `<button class="btn btn-small" onclick="openCommentsModal('line','${lineData.id}','Ligne #${lineData.id}')">💬 Commentaires</button>`;
+    popupContent += `<button class="btn icon-btn" style="padding:4px; margin:0; width:30px; height:30px; display:flex; align-items:center; justify-content:center;" onclick="copyShareLink('line','${lineData.id}', this)" title="Copier le lien">🔗</button>`;
+    popupContent += `</div>`;
 
     if (token && (currentUser === 'admin' || currentUser === lineData.username)) {
         popupContent += `<br><button class="btn btn-small" style="background:#ccffcc; color:#005500; margin-top:5px; margin-right:5px; text-decoration:none;" onclick="editLine('${lineData.id}')">✏️ Modifier</button>`;
@@ -1559,7 +1569,10 @@ window.renderSurfaceLocally = function(surfaceData, options = {}) {
     const areaHaStr = areaHa.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' ha';
 
     let popupContent = `<strong>Zone : ${cat}</strong><br>Nom : ${title}<br>Surface : ${areaHaStr} (${areaM2Str})<br><small>Tracé par ${surfaceData.username || 'Inconnu'} le ${formatCommentDate(surfaceData.created_at)}</small>`;
-    popupContent += `<br><button class="btn btn-small" style="margin-top:5px; margin-right:5px;" onclick="openCommentsModal('surface','${surfaceData.id}','Zone #${surfaceData.id}')">💬 Commentaires</button>`;
+    popupContent += `<div style="display:flex; justify-content:space-between; align-items:center; margin-top:5px;">`;
+    popupContent += `<button class="btn btn-small" onclick="openCommentsModal('surface','${surfaceData.id}','Zone #${surfaceData.id}')">💬 Commentaires</button>`;
+    popupContent += `<button class="btn icon-btn" style="padding:4px; margin:0; width:30px; height:30px; display:flex; align-items:center; justify-content:center;" onclick="copyShareLink('zone','${surfaceData.id}', this)" title="Copier le lien">🔗</button>`;
+    popupContent += `</div>`;
 
     // Add Rating UI wrapper
     popupContent += `<div id="rating-container-surface-${surfaceData.id}" style="margin-top:10px; display:flex; align-items:center; gap:5px;"><strong style="font-size:12px;">Évaluation Globale :</strong></div>`;

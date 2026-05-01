@@ -150,6 +150,17 @@ function initMap() {
         "Satellite 1": sat1,
         "Satellite 2": sat2
     };
+
+    const savedLayerName = localStorage.getItem('selectedBaseLayer');
+    if (savedLayerName && baseMaps[savedLayerName]) {
+        map.removeLayer(osm);
+        baseMaps[savedLayerName].addTo(map);
+    }
+
+    map.on('baselayerchange', function (e) {
+        localStorage.setItem('selectedBaseLayer', e.name);
+    });
+
     const isMobileViewport = window.innerWidth <= 768;
     layersControl = L.control.layers(baseMaps, null, { position: 'bottomleft' }).addTo(map);
     if (isMobileViewport && layersControl && layersControl.getContainer) {
@@ -174,6 +185,9 @@ function initMap() {
         }
     });
     map.addControl(new LegendControl());
+
+    // Scale control
+    L.control.scale({ imperial: false }).addTo(map);
 
     // Add Center Marker
     L.marker([46.4528333, 1.8601111]).addTo(map)
@@ -253,12 +267,15 @@ function openPanel(feature) {
     `;
 
     document.getElementById('parcel-data').innerHTML = `
-        <div class="parcel-main-info">
-            <span><strong>Surface :</strong> ${surfaceM2} (${surfaceHa})</span>
-            <button class="btn btn-small" onclick="toggleMoreInfo()" id="toggle-info-btn">Voir plus ↓</button>
+        <div class="parcel-main-info" style="display:flex; justify-content:space-between; align-items:center;">
+            <div>
+                <span><strong>Surface :</strong> ${surfaceM2} (${surfaceHa})</span>
+                <button class="btn btn-small" onclick="toggleMoreInfo()" id="toggle-info-btn">Voir plus ↓</button>
+            </div>
+            <button class="btn icon-btn" style="padding:0px; margin:0; width:30px; height:30px; display:flex; align-items:center; justify-content:center;" onclick="copyShareLink('parcel', '${currentParcelId}', this)" title="Copier le lien">🔗</button>
         </div>
         <ul id="parcel-more-info" style="display:none; margin-top:10px; padding-left: 20px; font-size:14px;">${otherPropsHTML}</ul>
-        <div id="parcel-rating-container" style="margin-top:10px; display:flex; align-items:center; gap:5px;">
+        <div id="parcel-rating-container" style="display:flex; align-items:center; gap:5px;">
             <strong style="font-size:14px;">Évaluation Globale :</strong>
             <span id="parcel-stars"></span>
         </div>
@@ -631,6 +648,83 @@ window.onload = () => {
 
     // Démarre le suivi GPS en temps réel
     map.locate({watch: true, enableHighAccuracy: true});
+
+    // Gérer les liens de partage
+    handleShareLink();
+};
+
+window.copyShareLink = function(type, id, btnElement) {
+    const url = new URL(window.location.href);
+    url.searchParams.set('shareType', type);
+    url.searchParams.set('shareId', id);
+    navigator.clipboard.writeText(url.toString()).then(() => {
+        if (btnElement) {
+            const originalHTML = btnElement.innerHTML;
+            btnElement.innerHTML = '✅';
+            setTimeout(() => {
+                if (btnElement) btnElement.innerHTML = originalHTML;
+            }, 2000);
+        } else {
+            customConfirm("Lien copié dans le presse-papiers !", () => {});
+        }
+    }).catch(err => {
+        console.error('Erreur:', err);
+        customPrompt("Copiez ce lien :", url.toString(), () => {});
+    });
+};
+
+window.handleShareLink = function() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const type = urlParams.get('shareType');
+    const id = urlParams.get('shareId');
+
+    if (!type || !id) return;
+
+    let attempts = 0;
+    const interval = setInterval(() => {
+        attempts++;
+        let found = false;
+
+        if (type === 'parcel' && typeof geojsonLayer !== 'undefined' && geojsonLayer) {
+            geojsonLayer.eachLayer(layer => {
+                if (layer.feature && layer.feature.properties && layer.feature.properties.id === id) {
+                    found = true;
+                    if (layer.getBounds) {
+                        map.fitBounds(layer.getBounds(), { maxZoom: 18 });
+                        setTimeout(() => layer.fire('click', { latlng: layer.getBounds().getCenter() }), 500);
+                    }
+                }
+            });
+        } else if (type === 'line' && typeof drawnLayers !== 'undefined' && drawnLayers[id]) {
+            found = true;
+            const layer = drawnLayers[id];
+            if (layer.getBounds) {
+                map.fitBounds(layer.getBounds(), { maxZoom: 18 });
+                setTimeout(() => layer.fire('click', { latlng: layer.getBounds().getCenter() }), 500);
+            }
+        } else if (type === 'lieu' && typeof lieuxDitsLayers !== 'undefined' && lieuxDitsLayers[id]) {
+            found = true;
+            const marker = lieuxDitsLayers[id];
+            if (marker.getLatLng) {
+                map.flyTo(marker.getLatLng(), 18, { duration: 0.5 });
+                setTimeout(() => marker.fire('click', { latlng: marker.getLatLng() }), 500);
+            }
+        } else if (type === 'zone' && typeof drawnSurfaces !== 'undefined' && drawnSurfaces[id]) {
+            found = true;
+            const group = drawnSurfaces[id];
+            if (group.getBounds) {
+                map.fitBounds(group.getBounds(), { maxZoom: 18 });
+                setTimeout(() => {
+                    const layers = group.getLayers();
+                    if (layers.length > 0) layers[0].fire('click', { latlng: group.getBounds().getCenter() });
+                }, 500);
+            }
+        }
+
+        if (found || attempts > 40) { // Max 20 seconds
+            clearInterval(interval);
+        }
+    }, 500);
 };
 
 window.addEventListener('online', () => {
