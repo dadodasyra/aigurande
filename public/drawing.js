@@ -1552,7 +1552,13 @@ window.renderSurfaceLocally = function(surfaceData, options = {}) {
     let title = surfaceData.name || 'Zone sans nom';
     let cat = surfaceData.category || 'Danger';
 
-    let popupContent = `<strong>Zone : ${cat}</strong><br>Nom : ${title}<br>Surface : ${(area / 10000).toFixed(2)} ha<br><small>Tracé par ${surfaceData.username || 'Inconnu'} le ${formatCommentDate(surfaceData.created_at)}</small>`;
+    // Format area: show hectares with 2 decimals and m² rounded with thousands separator
+    const areaM2 = Math.round(area || 0);
+    const areaM2Str = areaM2.toLocaleString('fr-FR') + ' m²';
+    const areaHa = (areaM2 / 10000);
+    const areaHaStr = areaHa.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' ha';
+
+    let popupContent = `<strong>Zone : ${cat}</strong><br>Nom : ${title}<br>Surface : ${areaHaStr} (${areaM2Str})<br><small>Tracé par ${surfaceData.username || 'Inconnu'} le ${formatCommentDate(surfaceData.created_at)}</small>`;
     popupContent += `<br><button class="btn btn-small" style="margin-top:5px; margin-right:5px;" onclick="openCommentsModal('surface','${surfaceData.id}','Zone #${surfaceData.id}')">💬 Commentaires</button>`;
 
     // Add Rating UI wrapper
