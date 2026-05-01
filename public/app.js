@@ -183,7 +183,7 @@ function initMap() {
     L.control.zoom({ position: 'topleft' }).addTo(map);
 
     // Load GeoJSON
-    fetch('/assets/merged_crozon_aigurande_pdb.json')
+    fetch('/assets/merged_crozon_aigurande_pdb.json') //Data downloaded and compiled from https://cadastre.data.gouv.fr/bundler/cadastre-etalab/communes/26249/geojson/parcelles
         .then(response => response.json())
         .then(data => {
             geojsonLayer = L.geoJSON(data, {
