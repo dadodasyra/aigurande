@@ -226,7 +226,7 @@ function onEachFeature(feature, layer) {
 }
 
 function openPanel(feature) {
-    currentParcelId = feature.properties.id;
+    currentParcelId = feature.id;
     const shortId = currentParcelId.replace(/^360(?:61|01)000/, '');
     document.getElementById('panel-title').innerText = `Parcelle ${shortId}`;
 
@@ -240,6 +240,7 @@ function openPanel(feature) {
     const surfaceM2 = hasSurface ? `${contenance.toLocaleString('fr-FR')} m²` : 'N/A';
     const surfaceHa = hasSurface ? `${(contenance / 10000).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ha` : 'N/A';
 
+    feature.properties.id = currentParcelId;
     const extraPropsHTML = Object.keys(feature.properties)
         .filter(k => k !== 'created' && k !== 'updated' && k !== 'contenance')
         .map(key => `<li><strong>${key}:</strong> ${feature.properties[key]}</li>`)
