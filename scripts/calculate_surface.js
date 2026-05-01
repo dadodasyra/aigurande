@@ -7,7 +7,7 @@ const highlightedParcelSuffixes = new Set([
     'C0959', 'C0960', 'C0961', 'C0727', 'C0732'
 ]);
 
-const filePath = 'merged_crozon_aigurande.json';
+const filePath = 'merged_crozon_aigurande_pdb.json';
 
 try {
     // 2. Lecture du fichier
@@ -41,7 +41,7 @@ try {
 
 } catch (error) {
     if (error.code === 'ENOENT') {
-        console.error("Erreur : Le fichier 'merged_crozon_aigurande.json' est introuvable.");
+        console.error("Erreur : Le fichier 'merged_crozon_aigurande_pdb.json' est introuvable.");
     } else {
         console.error("Erreur lors du traitement :", error.message);
     }

@@ -183,7 +183,7 @@ function initMap() {
     L.control.zoom({ position: 'topleft' }).addTo(map);
 
     // Load GeoJSON
-    fetch('/assets/merged_crozon_aigurande.json')
+    fetch('/assets/merged_crozon_aigurande_pdb.json')
         .then(response => response.json())
         .then(data => {
             geojsonLayer = L.geoJSON(data, {

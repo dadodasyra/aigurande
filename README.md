@@ -4,7 +4,7 @@ Une application cartographique web interactive permettant de visualiser des donn
 
 ## Fonctionnalités
 - Affichage mobile-first d'une carte interactive (via Leaflet) centrée sur la zone Aigurande / Crozon.
-- Chargement et survol des polygones de zones interactives à partir d'un fichier local GeoJSON (`assets/merged_crozon_aigurande.json`).
+- Chargement et survol des polygones de zones interactives à partir d'un fichier local GeoJSON (`assets/merged_crozon_aigurande_pdb.json`).
 - Boutons de géolocalisation de l'utilisateur (avec indication de la précision en mètres) et de recentrage rapide.
 - Tiroir interactif d'information de parcelles redimensionnable.
 - Système d'authentification robuste. L'administrateur peut créer des comptes pour ses collaborateurs.

@@ -4,7 +4,7 @@
 This is a mobile-first, offline-capable mapping application. 
 - **Frontend**: Vanilla HTML/JS/CSS using Leaflet.js. There are no build steps or frontend frameworks (No React/Vue/Webpack). Global state and map initialization live in `public/app.js`. Domain logic is split into `public/drawing.js` (network lines and points of interest/lieux-dits), `public/notes.js` (parcel notes), and `public/auth.js`.
 - **Backend**: A single-file Express.js monolith (`server.js`) connected to a local SQLite database (`database.sqlite`). 
-- **Data Flow**: Base parcel geometry is loaded statically on the client from `/assets/merged_crozon_aigurande.json`. User-generated content (notes, lines, lieux-dits) routes through JSON fetches to `/api/*` endpoints.
+- **Data Flow**: Base parcel geometry is loaded statically on the client from `/assets/merged_crozon_aigurande_pdb.json`. User-generated content (notes, lines, lieux-dits) routes through JSON fetches to `/api/*` endpoints.
 
 ## Core Patterns & Conventions
 
