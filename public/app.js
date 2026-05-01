@@ -425,8 +425,8 @@ window.customLieuPrompt = function(message, defaultTitle, defaultIcon, defaultDe
             errEl.style.display = 'block';
             return;
         }
-        if (!iconVal || iconVal.length > 5) {
-            errEl.innerText = "L'émoji doit être court.";
+        if (!iconVal) {
+            errEl.innerText = "L'émoji n'est pas là.";
             errEl.style.display = 'block';
             return;
         }
@@ -687,7 +687,10 @@ window.handleShareLink = function() {
 
         if (type === 'parcel' && typeof geojsonLayer !== 'undefined' && geojsonLayer) {
             geojsonLayer.eachLayer(layer => {
-                if (layer.feature && layer.feature.properties && layer.feature.properties.id === id) {
+                // Certaines GeoJSON utilisent feature.id alors que d'autres ont l'ID dans feature.properties.id
+                const feat = layer.feature;
+                const featId = feat && (feat.id || (feat.properties && feat.properties.id));
+                if (featId === id) {
                     found = true;
                     if (layer.getBounds) {
                         map.fitBounds(layer.getBounds(), { maxZoom: 18 });
