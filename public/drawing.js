@@ -423,7 +423,10 @@ window.toggleCatalog = function(e) {
 }
 
 window.setCatalogMode = function(mode) {
-    catalogMode = mode === 'lieux' ? 'lieux' : 'lines';
+    // Support 'lines', 'lieux' and 'surfaces' (alias: 'zones')
+    if (mode === 'lieux') catalogMode = 'lieux';
+    else if (mode === 'surfaces' || mode === 'zones') catalogMode = 'surfaces';
+    else catalogMode = 'lines';
     renderCatalog();
 }
 
@@ -679,12 +682,17 @@ function renderCatalog() {
     const content = document.getElementById('catalog-content');
     const linesBtn = document.getElementById('catalog-lines-btn');
     const lieuxBtn = document.getElementById('catalog-lieux-btn');
+    const surfacesBtn = document.getElementById('catalog-surfaces-btn');
     if (!content || !linesBtn || !lieuxBtn) return;
 
     linesBtn.style.background = catalogMode === 'lines' ? '#0078d4' : '#e0e0e0';
     linesBtn.style.color = catalogMode === 'lines' ? '#fff' : '#333';
     lieuxBtn.style.background = catalogMode === 'lieux' ? '#0078d4' : '#e0e0e0';
     lieuxBtn.style.color = catalogMode === 'lieux' ? '#fff' : '#333';
+    if (surfacesBtn) {
+        surfacesBtn.style.background = catalogMode === 'surfaces' ? '#0078d4' : '#e0e0e0';
+        surfacesBtn.style.color = catalogMode === 'surfaces' ? '#fff' : '#333';
+    }
 
     if (catalogMode === 'lines') {
         const lines = linesByData
@@ -725,6 +733,65 @@ function renderCatalog() {
             html += '</div>';
         });
         html += `<button class="btn btn-small" style="width:100%; margin-top:8px;" onclick="exportCatalogMode('lines')">Exporter JSON</button>`;
+        content.innerHTML = html;
+        return;
+    }
+
+    if (catalogMode === 'surfaces') {
+        const surfaces = linesByData
+            .map(item => item.data)
+            .filter(data => data && data.isSurface);
+
+        if (surfaces.length === 0) {
+            content.innerHTML = '<p style="margin:0; color:#666; font-size:13px;">Aucune zone disponible.</p>';
+            return;
+        }
+
+        const byCategory = {};
+        surfaces.forEach(s => {
+            const key = s.category || s.type || 'Autre';
+            if (!byCategory[key]) byCategory[key] = [];
+            byCategory[key].push(s);
+        });
+
+        const categories = Object.keys(byCategory).sort((a, b) => a.localeCompare(b, 'fr'));
+        let html = '';
+        categories.forEach(cat => {
+            const items = byCategory[cat].slice().sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'fr'));
+            const colorExample = items[0]?.color || '#000';
+            html += `<div class="catalog-group"><div class="catalog-group-title"><span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:${colorExample}; margin-right:6px;"></span>${cat}</div>`;
+            items.forEach(surf => {
+                // compute rough area similar to renderSurfaceLocally (ha)
+                let coords = surf.coordinates || surf.coords || [];
+                if (typeof coords === 'string') {
+                    try { coords = JSON.parse(coords); } catch(e) { coords = []; }
+                }
+                let area = 0;
+                if (coords.length > 2) {
+                    for (let i = 0; i < coords.length; i++) {
+                        let p1 = coords[i];
+                        let p2 = coords[(i + 1) % coords.length];
+                        let lng1 = p1[1] || p1.lng;
+                        let lat1 = p1[0] || p1.lat;
+                        let lng2 = p2[1] || p2.lng;
+                        let lat2 = p2[0] || p2.lat;
+                        area += (lng2 - lng1) * Math.PI / 180 * (2 + Math.sin(lat1 * Math.PI / 180) + Math.sin(lat2 * Math.PI / 180));
+                    }
+                    area = Math.abs(area * 6378137.0 * 6378137.0 / 2.0);
+                }
+                html += `
+                    <div class="catalog-item">
+                        <button class="catalog-main-btn" onclick="focusCatalogSurface('${surf.id}')">#${surf.id} - ${((area/10000) || 0).toFixed(2)} ha</button>
+                        <div class="catalog-actions">
+                            <button class="btn btn-small" title="Modifier" onclick="editSurface('${surf.id}')">✏️</button>
+                            <button class="btn btn-small" title="Supprimer" style="color:#b40000;" onclick="deleteSurface('${surf.id}')">🗑️</button>
+                        </div>
+                    </div>
+                `;
+            });
+            html += '</div>';
+        });
+        html += `<button class="btn btn-small" style="width:100%; margin-top:8px;" onclick="exportCatalogMode('surfaces')">Exporter JSON</button>`;
         content.innerHTML = html;
         return;
     }
@@ -803,6 +870,21 @@ window.exportCatalogMode = function(mode) {
             }));
     }
 
+    if (mode === 'surfaces') {
+        payload = linesByData
+            .map(item => item.data)
+            .filter(data => data && data.isSurface)
+            .map(data => ({
+                id: data.id,
+                name: data.name,
+                category: data.category,
+                color: data.color,
+                coordinates: data.coordinates || data.coords || [],
+                created_at: data.created_at,
+                username: data.username
+            }));
+    }
+
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -832,6 +914,21 @@ window.focusCatalogLieu = function(lieuId) {
     const latlng = marker.getLatLng();
     map.flyTo(latlng, Math.max(map.getZoom(), 17), { duration: 0.5 });
     marker.openPopup();
+}
+
+window.focusCatalogSurface = function(surfaceId) {
+    const group = drawnSurfaces[surfaceId];
+    if (!group) return;
+
+    const bounds = group.getBounds ? group.getBounds() : null;
+    if (bounds && bounds.isValid()) {
+        map.flyTo(bounds.getCenter(), Math.max(map.getZoom(), 17), { duration: 0.5 });
+        // fire a click on the polygon so the popup opens (polygon is first layer of the group)
+        try {
+            const layers = group.getLayers();
+            if (layers && layers[0]) layers[0].fire('click', { latlng: bounds.getCenter() });
+        } catch (e) {}
+    }
 }
 
 function saveLine() {
